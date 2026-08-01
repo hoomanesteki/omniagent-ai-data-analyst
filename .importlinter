@@ -1,0 +1,26 @@
+[importlinter]
+root_package = omniagent
+
+[importlinter:contract:layers]
+name = ports before vendors before agents before kernel
+type = layers
+layers =
+    omniagent.adapters | omniagent.channels | omniagent.packs
+    omniagent.agents
+    omniagent.kernel
+
+[importlinter:contract:kernel-vendor-free]
+name = kernel imports no vendor library
+type = forbidden
+source_modules = omniagent.kernel, omniagent.kernel.ports
+forbidden_modules =
+    duckdb
+    dbt
+    metricflow
+    langchain_groq
+    groq
+    streamlit
+    plotly
+    altair
+    lancedb
+    presidio_analyzer

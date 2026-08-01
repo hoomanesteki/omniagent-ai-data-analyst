@@ -1,0 +1,100 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "omniagent"
+version = "2.0.0"
+description = "Governed, measured answer engine for tabular data. Semantic layer first, abstain by default."
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+  {name = "Hooman Esteki", email = "esteki.net@gmail.com"}
+]
+requires-python = ">=3.11"
+dependencies = [
+  "pydantic>=2.0,<3",
+  "pydantic-settings>=2.0,<3",
+  "langgraph>=0.1.0",
+  "langchain>=0.1.0",
+  "langchain-core>=0.1.0",
+]
+
+[project.optional-dependencies]
+duckdb = ["duckdb>=1.0.0"]
+postgres = ["psycopg[binary]>=3.1.0"]
+metricflow = ["dbt-metricflow[duckdb]>=0.207.0", "dbt-core>=1.7.0", "dbt-duckdb>=1.7.0"]
+groq = ["langchain-groq>=0.1.0"]
+ollama = ["langchain-ollama>=0.1.0"]
+vectors = ["fastembed>=0.3.0", "duckdb[httpfs]"]
+eval = ["deepeval>=0.21.0", "ragas>=0.1.0"]
+streamlit = ["streamlit>=1.28.0"]
+mcp = ["mcp>=1.0.0"]
+semantic = ["metricflow>=0.207.0", "dbt-core>=1.7.0", "dbt-duckdb>=1.7.0"]
+local = ["ollama"]
+dev = [
+  "pytest>=7.4.0",
+  "pytest-cov>=4.1.0",
+  "pytest-xdist>=3.3.0",
+  "pytest-recording>=0.13.0",
+  "pytest-socket>=0.6.0",
+  "ruff>=0.1.0",
+  "mypy>=1.5.0",
+  "import-linter>=1.10.0",
+  "time-machine>=2.12.0",
+  "hypothesis>=6.82.0",
+  "sqlfluff>=3.0.0",
+]
+all = [
+  "omniagent[duckdb,postgres,metricflow,groq,vectors,eval,streamlit,mcp,dev]"
+]
+
+[tool.pytest.ini_options]
+addopts = "-q --strict-markers --strict-config -p no:randomly --cov=omniagent --cov-report=xml --cov-report=term-missing"
+testpaths = ["tests"]
+markers = [
+  "unit: unit tests",
+  "property: property-based tests",
+  "contract: adapter conformance tests",
+  "component: single node tests with fake LLM",
+  "integration: graph flows with real DuckDB and fake LLM",
+  "e2e: end-to-end with cassettes",
+  "perf: performance benchmarks",
+  "redteam: security and red team tests",
+  "slow: slow tests",
+  "llm: hits a real model, requires API key",
+  "real_clock: opts out of the frozen clock",
+]
+filterwarnings = [
+  "error::DeprecationWarning"
+]
+
+[tool.coverage.report]
+fail_under = 80
+exclude_also = [
+  "if TYPE_CHECKING:",
+  "raise NotImplementedError"
+]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+no_implicit_optional = true
+strict = true
+plugins = ["pydantic.mypy"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+lint.select = ["E", "F", "W", "I", "N", "C", "B", "A", "UP", "S", "BLE", "FBT", "T20"]
+lint.ignore = ["E501", "FBT001", "FBT002"]
+exclude = [".git", "__pycache__", "build", "dist"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+skip_gitignore = true
+
+[tool.pytest-recording]
+record_mode = "none"

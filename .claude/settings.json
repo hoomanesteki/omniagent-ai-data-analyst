@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rm -rf kernel adapters agents memory channels eval ct && ls -la)",
+      "Bash(git add *)"
+    ],
+    "additionalDirectories": [
+      "/Users/esteki/Desktop/MDS/Projects/omniagent-ai-data-analyst"
+    ]
+  }
+}
