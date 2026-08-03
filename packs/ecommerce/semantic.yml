@@ -1,0 +1,268 @@
+version: 1
+dataset_id: ecommerce
+label: E-commerce
+description: >
+  Orders, order lines, returns, customers, and products for a direct-to-consumer
+  retailer. Revenue is recognised on completed orders only; returns are netted
+  out via the refund measure rather than by deleting order rows.
+
+models:
+  orders:
+    table: ecommerce_orders
+    primary_key: order_id
+    dimensions:
+      order_date:
+        type: time
+        expr: order_date
+        label: Order date
+        synonyms: [date, when, order time]
+      order_status:
+        type: categorical
+        expr: order_status
+        label: Order status
+        synonyms: [status]
+      channel:
+        type: categorical
+        expr: channel
+        label: Channel
+        synonyms: [sales channel, order channel]
+      payment_method:
+        type: categorical
+        expr: payment_method
+        label: Payment method
+      shipping_country:
+        type: categorical
+        expr: shipping_country
+        label: Shipping country
+        synonyms: [ship to country]
+      discount_code:
+        type: categorical
+        expr: discount_code
+        label: Discount code
+        synonyms: [promo code, coupon]
+    measures:
+      order_total:
+        agg: sum
+        expr: order_total
+      order_count:
+        agg: count_distinct
+        expr: order_id
+
+  customers:
+    table: ecommerce_customers
+    primary_key: customer_id
+    join:
+      to: orders
+      type: left
+      condition: orders.customer_id = customers.customer_id
+      relationship: one_to_many
+    dimensions:
+      country:
+        type: categorical
+        expr: country
+        label: Customer country
+        synonyms: [customer country]
+      region:
+        type: categorical
+        expr: region
+        label: Region
+      customer_segment:
+        type: categorical
+        expr: customer_segment
+        label: Customer segment
+        synonyms: [segment]
+      marketing_channel:
+        type: categorical
+        expr: marketing_channel
+        label: Marketing channel
+        synonyms: [acquisition channel]
+      signup_date:
+        type: time
+        expr: signup_date
+        label: Signup date
+      email:
+        type: categorical
+        expr: email
+        label: Customer email
+        pii: true
+    measures:
+      customer_count:
+        agg: count_distinct
+        expr: customer_id
+
+  order_items:
+    table: ecommerce_order_items
+    primary_key: order_item_id
+    join:
+      to: orders
+      type: inner
+      condition: order_items.order_id = orders.order_id
+      relationship: many_to_one
+    measures:
+      units_sold:
+        agg: sum
+        expr: quantity
+      gross_line_revenue:
+        agg: sum
+        expr: line_total
+
+  products:
+    table: ecommerce_products
+    primary_key: product_id
+    join:
+      to: order_items
+      type: inner
+      condition: order_items.product_id = products.product_id
+      relationship: one_to_many
+    dimensions:
+      category:
+        type: categorical
+        expr: category
+        label: Product category
+        synonyms: [product category]
+      subcategory:
+        type: categorical
+        expr: subcategory
+        label: Subcategory
+      brand:
+        type: categorical
+        expr: brand
+        label: Brand
+    measures:
+      product_count:
+        agg: count_distinct
+        expr: product_id
+
+  returns:
+    table: ecommerce_returns
+    primary_key: return_id
+    join:
+      to: orders
+      type: inner
+      condition: returns.order_id = orders.order_id
+      relationship: many_to_one
+    dimensions:
+      return_reason:
+        type: categorical
+        expr: return_reason
+        label: Return reason
+      return_status:
+        type: categorical
+        expr: return_status
+        label: Return status
+      return_date:
+        type: time
+        expr: return_date
+        label: Return date
+    measures:
+      refund_amount:
+        agg: sum
+        expr: refund_amount
+      return_count:
+        agg: count_distinct
+        expr: return_id
+
+metrics:
+  gross_revenue:
+    label: Gross revenue
+    type: simple
+    measure: orders.order_total
+    filters:
+      - field: orders.order_status
+        op: eq
+        value: completed
+    default_time_dimension: orders.order_date
+    format: {type: currency, currency: USD, precision: 2, good_direction: up}
+    synonyms: [gross sales, total sales, sales, revenue, turnover]
+    description: Sum of order totals for completed orders, before refunds.
+
+  refunds:
+    label: Refunds
+    type: simple
+    measure: returns.refund_amount
+    filters:
+      - field: returns.return_status
+        op: eq
+        value: approved
+    default_time_dimension: orders.order_date
+    format: {type: currency, currency: USD, precision: 2, good_direction: down}
+    synonyms: [refunded amount, money refunded, returns value]
+    description: Sum of refunds on approved returns.
+
+  net_revenue:
+    label: Net revenue
+    type: derived
+    expr: gross_revenue - refunds
+    depends_on: [gross_revenue, refunds]
+    default_time_dimension: orders.order_date
+    format: {type: currency, currency: USD, precision: 2, good_direction: up}
+    synonyms: [net sales, revenue after refunds, net turnover]
+    description: Gross revenue less approved refunds.
+
+  order_count:
+    label: Orders
+    type: simple
+    measure: orders.order_count
+    filters:
+      - field: orders.order_status
+        op: eq
+        value: completed
+    default_time_dimension: orders.order_date
+    format: {type: number, precision: 0, good_direction: up}
+    synonyms: [number of orders, order volume, how many orders]
+    description: Count of distinct completed orders.
+
+  units_sold:
+    label: Units sold
+    type: simple
+    measure: order_items.units_sold
+    filters:
+      - field: orders.order_status
+        op: eq
+        value: completed
+    default_time_dimension: orders.order_date
+    format: {type: number, precision: 0, good_direction: up}
+    synonyms: [quantity sold, items sold, unit volume]
+    description: Total quantity across completed order lines.
+
+  average_order_value:
+    label: Average order value
+    type: ratio
+    numerator: gross_revenue
+    denominator: order_count
+    default_time_dimension: orders.order_date
+    format: {type: currency, currency: USD, precision: 2, good_direction: up}
+    synonyms: [aov, average basket, basket size, average order size]
+    description: Gross revenue divided by completed order count.
+
+  customer_count:
+    label: Customers
+    type: simple
+    measure: customers.customer_count
+    default_time_dimension: customers.signup_date
+    format: {type: number, precision: 0, good_direction: up}
+    synonyms: [number of customers, unique customers, buyers]
+    description: Count of distinct customers, by signup date.
+
+  return_rate:
+    label: Return rate
+    type: ratio
+    numerator: return_count
+    denominator: order_count
+    default_time_dimension: orders.order_date
+    format: {type: percent, precision: 2, good_direction: down}
+    synonyms: [returns rate, rate of returns, percentage returned]
+    description: Approved returns divided by completed orders.
+
+  return_count:
+    label: Returns
+    type: simple
+    measure: returns.return_count
+    filters:
+      - field: returns.return_status
+        op: eq
+        value: approved
+    default_time_dimension: orders.order_date
+    format: {type: number, precision: 0, good_direction: down}
+    synonyms: [number of returns, returned orders]
+    description: Count of distinct approved returns.
