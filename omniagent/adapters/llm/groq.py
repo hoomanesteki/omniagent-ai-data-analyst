@@ -1,7 +1,8 @@
 """Groq LLM provider adapter."""
 
 import os
-from typing import Any, Iterator, Optional
+from collections.abc import Iterator
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -13,7 +14,7 @@ class GroqProvider(LLMProvider):
 
     name = "groq"
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: str | None = None):
         """Initialize with API key from environment or parameter."""
         self.api_key = api_key or os.getenv("GROQ_API_KEY", "")
         if not self.api_key:
@@ -96,9 +97,7 @@ class GroqProvider(LLMProvider):
         """Completion request (not implemented in scaffold)."""
         raise NotImplementedError("Use langchain-groq ChatGroq instead")
 
-    def structured(
-        self, model_id: str, req: dict[str, Any], schema: type[BaseModel]
-    ) -> BaseModel:
+    def structured(self, model_id: str, req: dict[str, Any], schema: type[BaseModel]) -> BaseModel:
         """Structured output (not implemented in scaffold)."""
         raise NotImplementedError("Use langchain-groq with .with_structured_output()")
 

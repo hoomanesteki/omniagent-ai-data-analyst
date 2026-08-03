@@ -1,5 +1,6 @@
 """LLM provider: model capabilities and inference."""
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -37,13 +38,11 @@ class LLMProvider(Protocol):
         """Completion request."""
         ...
 
-    def structured(
-        self, model_id: str, req: dict[str, Any], schema: type
-    ) -> Any:
+    def structured(self, model_id: str, req: dict[str, Any], schema: type) -> Any:
         """Structured output."""
         ...
 
-    def stream(self, model_id: str, req: dict[str, Any]):
+    def stream(self, model_id: str, req: dict[str, Any]) -> Iterator[str]:
         """Token stream."""
         ...
 

@@ -23,17 +23,17 @@ dependencies = [
 [project.optional-dependencies]
 duckdb = ["duckdb>=1.0.0"]
 postgres = ["psycopg[binary]>=3.1.0"]
-metricflow = ["dbt-metricflow[duckdb]>=0.207.0", "dbt-core>=1.7.0", "dbt-duckdb>=1.7.0"]
+metricflow = ["dbt-metricflow[duckdb]>=0.13.0", "dbt-core>=1.10.4,<1.12.0", "dbt-duckdb>=1.10.0,<1.11.0"]
 groq = ["langchain-groq>=0.1.0"]
 ollama = ["langchain-ollama>=0.1.0"]
 vectors = ["fastembed>=0.3.0", "duckdb[httpfs]"]
 eval = ["deepeval>=0.21.0", "ragas>=0.1.0"]
 streamlit = ["streamlit>=1.28.0"]
 mcp = ["mcp>=1.0.0"]
-semantic = ["metricflow>=0.207.0", "dbt-core>=1.7.0", "dbt-duckdb>=1.7.0"]
 local = ["ollama"]
 dev = [
   "pytest>=7.4.0",
+  "pytest-asyncio>=0.23.0",
   "pytest-cov>=4.1.0",
   "pytest-xdist>=3.3.0",
   "pytest-recording>=0.13.0",
@@ -52,6 +52,7 @@ all = [
 [tool.pytest.ini_options]
 addopts = "-q --strict-markers --strict-config -p no:randomly --cov=omniagent --cov-report=xml --cov-report=term-missing"
 testpaths = ["tests"]
+asyncio_mode = "auto"
 markers = [
   "unit: unit tests",
   "property: property-based tests",
@@ -90,6 +91,13 @@ line-length = 100
 lint.select = ["E", "F", "W", "I", "N", "C", "B", "A", "UP", "S", "BLE", "FBT", "T20"]
 lint.ignore = ["E501", "FBT001", "FBT002"]
 exclude = [".git", "__pycache__", "build", "dist"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+# Gates and health checks deliberately catch-all: a single gate or provider
+# probe failing must never crash the surrounding request/policy.
+"omniagent/kernel/gates/**" = ["BLE001"]
+"omniagent/adapters/llm/**" = ["BLE001"]
 
 [tool.isort]
 profile = "black"

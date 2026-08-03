@@ -1,8 +1,11 @@
 """Storage ports: vectors, results, verified queries."""
 
+from __future__ import annotations
+
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Protocol, Sequence
+from typing import Any, Protocol
 
 
 @dataclass(frozen=True)
@@ -32,7 +35,9 @@ class VectorStore(Protocol):
         """Insert or update vectors."""
         ...
 
-    def search(self, ns: Namespace, query_vec: Any, k: int, where=None) -> list[Any]:
+    def search(
+        self, ns: Namespace, query_vec: Any, k: int, where: dict[str, Any] | None = None
+    ) -> list[Any]:
         """Search by similarity."""
         ...
 
@@ -44,9 +49,7 @@ class VectorStore(Protocol):
 class ResultStore(Protocol):
     """Ephemeral result table storage."""
 
-    def put(
-        self, table: Any, *, principal: Any, ttl_s: int = 900
-    ) -> str:
+    def put(self, table: Any, *, principal: Any, ttl_s: int = 900) -> str:
         """Store result, return reference handle."""
         ...
 

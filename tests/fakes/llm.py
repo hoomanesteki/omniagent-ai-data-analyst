@@ -1,6 +1,7 @@
 """Fake LLM for testing: ScriptedLLM replays canned responses."""
 
-from typing import Any, Iterator, Optional
+from collections.abc import Iterator
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -17,7 +18,7 @@ class ScriptedLLM(LLMProvider):
         self._script = list(script)
         self._max_calls = max_calls
         self.calls: list[dict[str, Any]] = []
-        self._schema: Optional[type[BaseModel]] = None
+        self._schema: type[BaseModel] | None = None
 
     def with_structured_output(self, schema: type[BaseModel]) -> "ScriptedLLM":
         """Configure expected schema for structured output."""
@@ -52,9 +53,7 @@ class ScriptedLLM(LLMProvider):
             raise AssertionError(f"LLM called {len(self.calls)}x, script exhausted")
         return self._script.pop(0)
 
-    def structured(
-        self, model_id: str, req: dict[str, Any], schema: type[BaseModel]
-    ) -> BaseModel:
+    def structured(self, model_id: str, req: dict[str, Any], schema: type[BaseModel]) -> BaseModel:
         """Replay next scripted response, validate schema."""
         if len(self.calls) >= self._max_calls:
             raise AssertionError(f"LLM budget {self._max_calls} exceeded")

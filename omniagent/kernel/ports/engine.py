@@ -1,8 +1,9 @@
 """Engine adapter: read-only SQL execution."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Protocol, Sequence
+from typing import Any, Protocol
 
 
 class ReadOnlyMode(Enum):
@@ -58,11 +59,16 @@ class EngineAdapter(Protocol):
         self,
         sql: str,
         *,
+        params: Sequence[Any] = (),
         principal: Any,
         timeout_s: float,
         row_cap: int,
     ) -> ResultTable:
-        """Execute read-only SELECT, respecting timeout and row cap."""
+        """Execute read-only SELECT, respecting timeout and row cap.
+
+        Filter values arrive as ``params``, never interpolated into ``sql``, so
+        a value sourced from a model or an end user cannot alter the statement.
+        """
         ...
 
     def schema_snapshot(self, dataset_id: str) -> dict[str, Any]:

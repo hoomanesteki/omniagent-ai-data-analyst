@@ -1,5 +1,7 @@
 """Time resolution: calendars, fiscal years, relative phrases."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Protocol
@@ -29,8 +31,6 @@ class CalendarSpec:
 class TimeResolver(Protocol):
     """Deterministic time phrase resolution."""
 
-    def resolve(
-        self, phrase: str, *, now: datetime, cal: CalendarSpec
-    ) -> TimeRange:
+    def resolve(self, phrase: str, *, now: datetime, cal: CalendarSpec) -> TimeRange:
         """Convert "last quarter" to absolute range."""
         ...

@@ -1,7 +1,8 @@
 """Ollama LLM provider adapter (local or remote)."""
 
 import os
-from typing import Any, Iterator, Optional
+from collections.abc import Iterator
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -13,7 +14,7 @@ class OllamaProvider(LLMProvider):
 
     name = "ollama"
 
-    def __init__(self, base_url: Optional[str] = None):
+    def __init__(self, base_url: str | None = None):
         """Initialize with Ollama base URL (default: http://localhost:11434)."""
         self.base_url = base_url or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
@@ -94,11 +95,11 @@ class OllamaProvider(LLMProvider):
         """Completion request (not implemented in scaffold)."""
         raise NotImplementedError("Use langchain-ollama instead")
 
-    def structured(
-        self, model_id: str, req: dict[str, Any], schema: type[BaseModel]
-    ) -> BaseModel:
+    def structured(self, model_id: str, req: dict[str, Any], schema: type[BaseModel]) -> BaseModel:
         """Structured output (not implemented in scaffold)."""
-        raise NotImplementedError("Use langchain-ollama with prompt engineering for structured output")
+        raise NotImplementedError(
+            "Use langchain-ollama with prompt engineering for structured output"
+        )
 
     def stream(self, model_id: str, req: dict[str, Any]) -> Iterator[str]:
         """Token stream (not implemented in scaffold)."""
@@ -108,6 +109,7 @@ class OllamaProvider(LLMProvider):
         """Check Ollama server health."""
         try:
             import requests
+
             resp = requests.get(f"{self.base_url}/api/tags", timeout=2)
             return resp.status_code == 200
         except Exception:

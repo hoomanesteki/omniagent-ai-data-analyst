@@ -64,7 +64,7 @@ class CompiledQuery:
     provenance: dict[str, Any]
 
 
-class SemanticIssue(Exception):
+class SemanticIssue(Exception):  # noqa: N818 - value object as much as exception, used as both
     """Validation issue in a SemanticQuery."""
 
     pass

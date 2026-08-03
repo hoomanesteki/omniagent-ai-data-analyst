@@ -1,18 +1,20 @@
 [importlinter]
 root_package = omniagent
+include_external_packages = True
 
 [importlinter:contract:layers]
 name = ports before vendors before agents before kernel
 type = layers
 layers =
-    omniagent.adapters | omniagent.channels | omniagent.packs
+    omniagent.adapters | omniagent.channels
     omniagent.agents
     omniagent.kernel
 
 [importlinter:contract:kernel-vendor-free]
 name = kernel imports no vendor library
 type = forbidden
-source_modules = omniagent.kernel, omniagent.kernel.ports
+source_modules =
+    omniagent.kernel
 forbidden_modules =
     duckdb
     dbt

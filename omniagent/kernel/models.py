@@ -1,8 +1,7 @@
 """Pydantic models for typed contracts between agents."""
 
 from datetime import datetime
-from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -38,8 +37,8 @@ class MetricValue(BaseModel):
     metric: str
     value: Any
     formatted: str = ""
-    unit: Optional[str] = None
-    currency: Optional[str] = None
+    unit: str | None = None
+    currency: str | None = None
 
 
 class DisplayFormat(BaseModel):
@@ -47,8 +46,8 @@ class DisplayFormat(BaseModel):
 
     type: str  # "number", "currency", "percent"
     precision: int = 2
-    currency: Optional[str] = None
-    good_direction: Optional[str] = None  # "up", "down"
+    currency: str | None = None
+    good_direction: str | None = None  # "up", "down"
 
 
 class ChartSpec(BaseModel):
@@ -71,7 +70,7 @@ class Verdict(BaseModel):
     numbers_match: bool
     confidence: float = Field(ge=0.0, le=1.0)
     abstain: bool = False
-    reason: Optional[str] = None
+    reason: str | None = None
 
     class Config:
         extra = "forbid"
@@ -82,17 +81,17 @@ class AnswerEnvelope(BaseModel):
 
     envelope_version: str = "1"
     kind: str  # "answer" | "abstention" | "clarification"
-    headline: Optional[str] = None
-    narration: Optional[str] = None
+    headline: str | None = None
+    narration: str | None = None
     values: list[MetricValue] = []
-    chart: Optional[ChartSpec] = None
-    table_ref: Optional[str] = None
-    executed_sql: Optional[str] = None
-    metric_request: Optional[dict] = None
-    confidence: Optional[float] = None
+    chart: ChartSpec | None = None
+    table_ref: str | None = None
+    executed_sql: str | None = None
+    metric_request: dict[str, Any] | None = None
+    confidence: float | None = None
     assumptions: list[str] = []
     suggestions: list[str] = []
-    clarification: Optional[dict] = None
+    clarification: dict[str, Any] | None = None
     trace_id: str = ""
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -105,4 +104,4 @@ class Clarification(BaseModel):
 
     question: str
     options: list[str]
-    selected: Optional[str] = None
+    selected: str | None = None

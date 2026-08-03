@@ -1,7 +1,7 @@
 """Identity and scoping: principal, tenant, dataset ownership."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Mapping
 
 
 @dataclass(frozen=True)
