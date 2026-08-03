@@ -1,6 +1,6 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
-*.py[codz]
+*.py[cod]
 *$py.class
 
 # C extensions
@@ -18,6 +18,42 @@ lib/
 lib64/
 parts/
 sdist/
+.venv/
+venv/
+env/
+
+# Project-specific
+data/warehouse/
+data/samples/
+.env
+.env.local
+*.duckdb
+*.parquet
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.pytest_cache/
+.hypothesis/
+.mypy_cache/
+cassettes/
+
+# Logs
+*.log
+logs/
+
+# Git
+.git/
 var/
 wheels/
 share/python-wheels/

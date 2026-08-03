@@ -1,0 +1,321 @@
+version: 1
+dataset_id: saas
+label: SaaS
+description: >
+  Accounts, subscriptions, invoices, usage events, and support tickets for a
+  B2B subscription business. MRR is carried on the subscription row, so
+  recurring-revenue metrics come from subscriptions and cash metrics come from
+  invoices — they are deliberately not interchangeable.
+
+models:
+  subscriptions:
+    table: saas_subscriptions
+    primary_key: subscription_id
+    dimensions:
+      plan_name:
+        type: categorical
+        expr: plan_name
+        label: Plan
+        synonyms: [plan, tier, package]
+      billing_cycle:
+        type: categorical
+        expr: billing_cycle
+        label: Billing cycle
+        synonyms: [billing period]
+      status:
+        type: categorical
+        expr: status
+        label: Subscription status
+      start_date:
+        type: time
+        expr: start_date
+        label: Subscription start date
+        synonyms: [start date]
+      end_date:
+        type: time
+        expr: end_date
+        label: Subscription end date
+    measures:
+      mrr:
+        agg: sum
+        expr: mrr_amount
+      seats:
+        agg: sum
+        expr: seats
+      subscription_count:
+        agg: count_distinct
+        expr: subscription_id
+
+  accounts:
+    table: saas_accounts
+    primary_key: account_id
+    join:
+      to: subscriptions
+      type: left
+      condition: subscriptions.account_id = accounts.account_id
+      relationship: one_to_many
+    dimensions:
+      industry:
+        type: categorical
+        expr: industry
+        label: Industry
+        synonyms: [vertical, sector]
+      company_size:
+        type: categorical
+        expr: company_size
+        label: Company size
+        synonyms: [segment, size band]
+      country:
+        type: categorical
+        expr: country
+        label: Country
+      signup_date:
+        type: time
+        expr: signup_date
+        label: Account signup date
+      is_active:
+        type: boolean
+        expr: is_active
+        label: Account is active
+      churn_date:
+        type: time
+        expr: churn_date
+        label: Churn date
+      account_owner_email:
+        type: categorical
+        expr: account_owner_email
+        label: Account owner email
+        pii: true
+    measures:
+      account_count:
+        agg: count_distinct
+        expr: account_id
+
+  invoices:
+    table: saas_invoices
+    primary_key: invoice_id
+    join:
+      to: subscriptions
+      type: inner
+      condition: invoices.subscription_id = subscriptions.subscription_id
+      relationship: many_to_one
+    dimensions:
+      invoice_date:
+        type: time
+        expr: invoice_date
+        label: Invoice date
+        synonyms: [billed date]
+      invoice_status:
+        type: categorical
+        expr: status
+        label: Invoice status
+      payment_method:
+        type: categorical
+        expr: payment_method
+        label: Payment method
+    measures:
+      amount_due:
+        agg: sum
+        expr: amount_due
+      amount_paid:
+        agg: sum
+        expr: amount_paid
+      invoice_count:
+        agg: count_distinct
+        expr: invoice_id
+
+  usage_events:
+    table: saas_usage_events
+    primary_key: event_id
+    join:
+      to: subscriptions
+      type: inner
+      condition: usage_events.subscription_id = subscriptions.subscription_id
+      relationship: many_to_one
+    dimensions:
+      event_timestamp:
+        type: time
+        expr: event_timestamp
+        label: Event time
+      event_type:
+        type: categorical
+        expr: event_type
+        label: Event type
+        synonyms: [activity type, action]
+    measures:
+      event_volume:
+        agg: sum
+        expr: event_count
+      active_accounts:
+        agg: count_distinct
+        expr: account_id
+
+  support_tickets:
+    table: saas_support_tickets
+    primary_key: ticket_id
+    join:
+      to: accounts
+      type: inner
+      condition: support_tickets.account_id = accounts.account_id
+      relationship: many_to_one
+    dimensions:
+      created_at:
+        type: time
+        expr: created_at
+        label: Ticket created at
+      ticket_category:
+        type: categorical
+        expr: category
+        label: Ticket category
+      priority:
+        type: categorical
+        expr: priority
+        label: Priority
+      ticket_status:
+        type: categorical
+        expr: status
+        label: Ticket status
+      assigned_agent_email:
+        type: categorical
+        expr: assigned_agent_email
+        label: Assigned agent email
+        pii: true
+    measures:
+      ticket_count:
+        agg: count_distinct
+        expr: ticket_id
+      satisfaction_score:
+        agg: avg
+        expr: satisfaction_score
+
+metrics:
+  mrr:
+    label: MRR
+    type: simple
+    measure: subscriptions.mrr
+    filters:
+      - field: subscriptions.status
+        op: eq
+        value: active
+    default_time_dimension: subscriptions.start_date
+    format: {type: currency, currency: USD, precision: 2, good_direction: up}
+    synonyms: [monthly recurring revenue, recurring revenue, run rate]
+    description: Sum of MRR across active subscriptions.
+
+  arr:
+    label: ARR
+    type: derived
+    expr: mrr * 12
+    depends_on: [mrr]
+    default_time_dimension: subscriptions.start_date
+    format: {type: currency, currency: USD, precision: 2, good_direction: up}
+    synonyms: [annual recurring revenue, annualised revenue]
+    description: MRR annualised.
+
+  active_subscriptions:
+    label: Active subscriptions
+    type: simple
+    measure: subscriptions.subscription_count
+    filters:
+      - field: subscriptions.status
+        op: eq
+        value: active
+    default_time_dimension: subscriptions.start_date
+    format: {type: number, precision: 0, good_direction: up}
+    synonyms: [number of subscriptions, subscription count, live subscriptions]
+    description: Count of distinct active subscriptions.
+
+  seats_sold:
+    label: Seats
+    type: simple
+    measure: subscriptions.seats
+    filters:
+      - field: subscriptions.status
+        op: eq
+        value: active
+    default_time_dimension: subscriptions.start_date
+    format: {type: number, precision: 0, good_direction: up}
+    synonyms: [licences, licenses, number of seats]
+    description: Total seats across active subscriptions.
+
+  average_revenue_per_account:
+    label: ARPA
+    type: ratio
+    numerator: mrr
+    denominator: account_count
+    default_time_dimension: subscriptions.start_date
+    format: {type: currency, currency: USD, precision: 2, good_direction: up}
+    synonyms: [arpa, revenue per account, average revenue per account]
+    description: MRR divided by account count.
+
+  account_count:
+    label: Accounts
+    type: simple
+    measure: accounts.account_count
+    default_time_dimension: accounts.signup_date
+    format: {type: number, precision: 0, good_direction: up}
+    synonyms: [number of accounts, customers, number of customers]
+    description: Count of distinct accounts.
+
+  churned_accounts:
+    label: Churned accounts
+    type: simple
+    measure: accounts.account_count
+    filters:
+      - field: accounts.is_active
+        op: eq
+        value: false
+    default_time_dimension: accounts.churn_date
+    format: {type: number, precision: 0, good_direction: down}
+    synonyms: [churn count, lost accounts, cancellations]
+    description: Count of accounts flagged inactive.
+
+  collected_revenue:
+    label: Collected revenue
+    type: simple
+    measure: invoices.amount_paid
+    filters:
+      - field: invoices.invoice_status
+        op: eq
+        value: paid
+    default_time_dimension: invoices.invoice_date
+    format: {type: currency, currency: USD, precision: 2, good_direction: up}
+    synonyms: [cash collected, payments received, collections]
+    description: Sum of amounts paid on settled invoices.
+
+  outstanding_balance:
+    label: Outstanding balance
+    type: derived
+    expr: billed_revenue - collected_revenue
+    depends_on: [billed_revenue, collected_revenue]
+    default_time_dimension: invoices.invoice_date
+    format: {type: currency, currency: USD, precision: 2, good_direction: down}
+    synonyms: [unpaid balance, receivables, amount outstanding]
+    description: Billed revenue not yet collected.
+
+  billed_revenue:
+    label: Billed revenue
+    type: simple
+    measure: invoices.amount_due
+    default_time_dimension: invoices.invoice_date
+    format: {type: currency, currency: USD, precision: 2, good_direction: up}
+    synonyms: [invoiced revenue, amount billed, total billed]
+    description: Sum of amounts due across invoices.
+
+  support_tickets:
+    label: Support tickets
+    type: simple
+    measure: support_tickets.ticket_count
+    default_time_dimension: support_tickets.created_at
+    format: {type: number, precision: 0, good_direction: down}
+    synonyms: [number of tickets, ticket volume, cases]
+    description: Count of distinct support tickets.
+
+  average_satisfaction:
+    label: Average satisfaction
+    type: simple
+    measure: support_tickets.satisfaction_score
+    default_time_dimension: support_tickets.created_at
+    format: {type: number, precision: 2, good_direction: up}
+    synonyms: [csat, satisfaction score, customer satisfaction]
+    description: Mean satisfaction score across rated tickets.
