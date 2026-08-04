@@ -172,3 +172,36 @@ class TestSaasPackLoadsAndCompiles:
         compiled = provider.compile("saas", SemanticQuery(metrics=("collected_revenue",), limit=5))
         assert "invoices.status" in compiled.sql
         assert compiled.provenance["params"] == ["paid"]
+
+    def test_every_metric_groupable_by_every_categorical_dimension_actually_executes(
+        self, provider, saas_warehouse
+    ):
+        """Regression: joining a metric's model to a dimension's model two
+        hops apart (support_tickets -> accounts, where accounts separately
+        declares its own unrelated join to subscriptions) used to splice in
+        the wrong model's join_type and join_condition, since accounts'
+        own (irrelevant here) join was truthy and got picked over the one
+        that's actually needed. That produced SQL that compiled cleanly
+        (compile() never runs it) but failed at execution with a binder
+        error on a table that was never joined. validate()/compile() alone
+        would not catch this again -- only real execution does."""
+        catalog = provider.catalog("saas")
+        checked_any_breakdown = False
+        for metric_name in catalog.metric_names():
+            for dim_name, dim_info in catalog.dimensions.items():
+                if dim_info.type != "categorical":
+                    continue
+                query = SemanticQuery(metrics=(metric_name,), group_by=(dim_name,), limit=5)
+                if provider.validate("saas", query):
+                    continue
+                compiled = provider.compile("saas", query)
+                result = saas_warehouse.execute(
+                    compiled.sql,
+                    params=compiled.provenance.get("params", ()),
+                    principal=None,
+                    timeout_s=10.0,
+                    row_cap=5,
+                )
+                assert result.row_count >= 0  # executed without a binder error
+                checked_any_breakdown = True
+        assert checked_any_breakdown

@@ -105,3 +105,81 @@ def ecommerce_warehouse(tmp_path):
     engine = DuckDBEngine(db_path, read_only=True)
     yield engine
     engine.close()
+
+
+@pytest.fixture
+def saas_warehouse(tmp_path):
+    """A tiny DuckDB warehouse matching packs/saas/semantic.yml's tables.
+
+    Unlike ecommerce_warehouse, values here are not hand-verified against
+    every metric (no test currently asserts exact SaaS numbers) -- this
+    fixture exists so real join paths across all five SaaS models can
+    actually be executed, which is what caught a real join_type/
+    join_condition bug in native_yaml.py's _join_path that only manifested
+    at execution time (see test_semantic_native_yaml.py's regression test).
+    """
+    db_path = tmp_path / "saas_warehouse.duckdb"
+    conn = duckdb.connect(str(db_path))
+    conn.execute("""
+        CREATE TABLE saas_accounts (
+            account_id VARCHAR, industry VARCHAR, company_size VARCHAR,
+            country VARCHAR, signup_date DATE, is_active BOOLEAN,
+            churn_date DATE, account_owner_email VARCHAR
+        )
+    """)
+    conn.execute("""
+        INSERT INTO saas_accounts VALUES
+        ('A1', 'Healthcare', 'mid_market', 'US', '2025-01-10', true, NULL, 'owner1@example.com'),
+        ('A2', 'Financial Services', 'enterprise', 'UK', '2025-03-01', true, NULL, 'owner2@example.com')
+    """)
+    conn.execute("""
+        CREATE TABLE saas_subscriptions (
+            subscription_id VARCHAR, account_id VARCHAR, plan_name VARCHAR,
+            billing_cycle VARCHAR, status VARCHAR, start_date DATE,
+            end_date DATE, mrr_amount DOUBLE, seats INTEGER
+        )
+    """)
+    conn.execute("""
+        INSERT INTO saas_subscriptions VALUES
+        ('S1', 'A1', 'pro', 'monthly', 'active', '2025-01-15', NULL, 500.0, 10),
+        ('S2', 'A2', 'enterprise', 'annual', 'active', '2025-03-05', NULL, 2000.0, 50)
+    """)
+    conn.execute("""
+        CREATE TABLE saas_invoices (
+            invoice_id VARCHAR, subscription_id VARCHAR, invoice_date DATE,
+            status VARCHAR, payment_method VARCHAR, amount_due DOUBLE, amount_paid DOUBLE
+        )
+    """)
+    conn.execute("""
+        INSERT INTO saas_invoices VALUES
+        ('I1', 'S1', '2025-02-01', 'paid', 'card', 500.0, 500.0),
+        ('I2', 'S2', '2025-04-01', 'paid', 'wire', 2000.0, 2000.0)
+    """)
+    conn.execute("""
+        CREATE TABLE saas_usage_events (
+            event_id VARCHAR, subscription_id VARCHAR, account_id VARCHAR,
+            event_timestamp TIMESTAMP, event_type VARCHAR, event_count INTEGER
+        )
+    """)
+    conn.execute("""
+        INSERT INTO saas_usage_events VALUES
+        ('E1', 'S1', 'A1', '2025-02-10 10:00:00', 'login', 5),
+        ('E2', 'S2', 'A2', '2025-04-10 10:00:00', 'export', 2)
+    """)
+    conn.execute("""
+        CREATE TABLE saas_support_tickets (
+            ticket_id VARCHAR, account_id VARCHAR, created_at TIMESTAMP,
+            category VARCHAR, priority VARCHAR, status VARCHAR,
+            assigned_agent_email VARCHAR, satisfaction_score DOUBLE
+        )
+    """)
+    conn.execute("""
+        INSERT INTO saas_support_tickets VALUES
+        ('T1', 'A1', '2025-02-15 09:00:00', 'billing', 'low', 'closed', 'agent1@example.com', 4.5),
+        ('T2', 'A2', '2025-04-15 09:00:00', 'bug', 'high', 'open', 'agent2@example.com', 3.0)
+    """)
+    conn.close()
+
+    engine = DuckDBEngine(db_path, read_only=True)
+    yield engine
+    engine.close()

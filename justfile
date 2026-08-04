@@ -20,6 +20,9 @@ coverage:
 
 ci: lint test
 
+eval:
+    uv run python scripts/run_eval.py
+
 help:
     @echo "OmniAgent 2.0 build tasks"
     @echo "  make install    - set up environment"
@@ -28,3 +31,4 @@ help:
     @echo "  make test-all   - all tests including integration and e2e"
     @echo "  make coverage   - run tests with coverage report"
     @echo "  make ci         - run lint and fast tests (what CI runs)"
+    @echo "  make eval       - run the evaluation harness, print the scorecard"
