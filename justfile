@@ -7,7 +7,7 @@ lint:
     uv run ruff check omniagent tests scripts
     uv run ruff format --check omniagent tests scripts
     uv run mypy omniagent/kernel omniagent/agents omniagent/channels omniagent/adapters omniagent/memory omniagent/eval
-    uv run import-linter lint
+    uv run lint-imports
 
 test:
     uv run pytest tests/unit tests/contract tests/component tests/perf -n auto --tb=short
