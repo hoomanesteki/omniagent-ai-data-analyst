@@ -19,8 +19,16 @@ from omniagent.kernel.catalog import Ambiguous, Catalog, Match
 from omniagent.kernel.state import OmniState
 
 
-def make_master_node(catalog: Catalog) -> GraphNode:
-    """Bind a dataset's catalog and return the master node function."""
+def make_master_node(catalog: Catalog, *, fallback_route: str | None = None) -> GraphNode:
+    """Bind a dataset's catalog and return the master node function.
+
+    `fallback_route` names the node an unmatched question is sent to instead
+    of an immediate clarification (e.g. "fast_path", ahead of the guarded SQL
+    fallback) — an ambiguous match still always clarifies, since the catalog
+    has genuine, discoverable candidates to offer; only a total miss has
+    nothing better than "here's what I can answer" to fall back on without a
+    fallback route configured.
+    """
 
     async def master_node(state: OmniState) -> Command[str]:
         question = latest_user_message(state)
@@ -58,8 +66,13 @@ def make_master_node(catalog: Catalog) -> GraphNode:
             )
 
         # No deterministic match at all. Full model-based routing (Phase 6)
-        # is not wired in yet, so the honest terminal state is to say what
-        # is actually supported rather than guess.
+        # is not wired in yet. With a fallback route configured, try the
+        # guarded SQL path instead of giving up immediately; without one,
+        # the honest terminal state is to say what is actually supported
+        # rather than guess.
+        if fallback_route is not None:
+            return Command(goto=fallback_route, update={"route": fallback_route, "intent": "sql"})
+
         return Command(
             goto=END,
             update={

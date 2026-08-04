@@ -125,16 +125,22 @@ class PostgresEngine:
         )
 
     def schema_snapshot(self, dataset_id: str) -> dict[str, Any]:
-        """Table and column metadata for schema linking."""
+        """Table and column metadata for schema linking.
+
+        Matches the DuckDB adapter's convention (see its docstring): datasets
+        are disambiguated by a `{dataset_id}_` table name prefix within the
+        `public` schema, not a Postgres schema per dataset.
+        """
+        pattern = dataset_id.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "\\_%"
         with self._conn.cursor() as cursor:
             cursor.execute(
                 """
                 SELECT table_name, column_name, data_type
                 FROM information_schema.columns
-                WHERE table_schema = %s
+                WHERE table_name LIKE %s ESCAPE '\\'
                 ORDER BY table_name, ordinal_position
                 """,
-                (dataset_id,),
+                (pattern,),
             )
             rows = cursor.fetchall()
 

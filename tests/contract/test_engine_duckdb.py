@@ -53,10 +53,17 @@ class TestDuckDBEngineConformance:
         assert exc_info.value.code in ("READ_ONLY_VIOLATION", "ENGINE_ERROR")
 
     def test_schema_snapshot_lists_tables_and_columns(self, ecommerce_warehouse):
-        snapshot = ecommerce_warehouse.schema_snapshot("main")
+        snapshot = ecommerce_warehouse.schema_snapshot("ecommerce")
         assert "ecommerce_orders" in snapshot["tables"]
         columns = {c["name"] for c in snapshot["tables"]["ecommerce_orders"]}
         assert {"order_id", "customer_id", "order_status", "order_total"} <= columns
+
+    def test_schema_snapshot_scoped_to_dataset_prefix_only(self, ecommerce_warehouse):
+        """Tables are disambiguated by a `{dataset_id}_` name prefix, not a DuckDB
+        schema (see scripts/load_warehouse.py: every pack's tables share one flat
+        warehouse) -- an unrelated or non-prefix-matching dataset_id sees nothing."""
+        snapshot = ecommerce_warehouse.schema_snapshot("saas")
+        assert snapshot["tables"] == {}
 
     def test_normalize_error_missing_table(self, ecommerce_warehouse):
         with pytest.raises(EngineError) as exc_info:

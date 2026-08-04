@@ -45,6 +45,10 @@ class VectorStore(Protocol):
         """Delete namespace."""
         ...
 
+    def count(self, ns: Namespace) -> int:
+        """Count vectors stored in a namespace."""
+        ...
+
 
 class ResultStore(Protocol):
     """Ephemeral result table storage."""

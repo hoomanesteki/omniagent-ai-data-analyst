@@ -107,7 +107,7 @@ class GroqProvider(LLMProvider):
         """
         from langchain_groq import ChatGroq
 
-        chat = ChatGroq(model=model_id, api_key=self.api_key, temperature=0)
+        chat = ChatGroq(model_name=model_id, api_key=self.api_key, temperature=0)
         structured_chat = chat.with_structured_output(schema)
         result = structured_chat.invoke(build_prompt(req))
         if not isinstance(result, schema):

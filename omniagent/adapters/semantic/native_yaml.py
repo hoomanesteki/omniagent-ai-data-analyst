@@ -26,7 +26,7 @@ import json
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 
@@ -191,7 +191,7 @@ class NativeYamlProvider:
 
     def schema_version(self, dataset_id: str) -> str:
         """Content hash of the pack file — changes invalidate cached plans."""
-        return self._load(dataset_id)["schema_version"]
+        return cast(str, self._load(dataset_id)["schema_version"])
 
     def validate(  # noqa: C901 - reports every problem with the query, not just the first
         self, dataset_id: str, q: SemanticQuery
@@ -842,7 +842,7 @@ class _QueryPlan:
     def _dimension(self, name: str) -> _Dimension:
         base, _ = _split_grain(name)
         try:
-            return self._pack["dimensions"][base]
+            return cast(_Dimension, self._pack["dimensions"][base])
         except KeyError:
             raise SemanticIssue(f"Unknown dimension {name!r}") from None
 
