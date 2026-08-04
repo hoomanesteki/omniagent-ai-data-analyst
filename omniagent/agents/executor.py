@@ -107,7 +107,7 @@ def make_executor_node(
         new_assumptions = working.assumptions[len(state.assumptions) :]
 
         return Command(
-            goto=END,
+            goto="narrator",
             update={
                 "executed_sql": compiled.sql,
                 "result_set": working.result_set,
