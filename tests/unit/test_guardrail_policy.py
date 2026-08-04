@@ -1,6 +1,7 @@
 """Unit tests for GuardrailPolicy: gate composition and orchestration."""
 
 import asyncio
+from typing import Any
 
 import pytest
 
@@ -8,21 +9,21 @@ from omniagent.kernel.gates import GuardrailPolicy, Unsafe
 from omniagent.kernel.state import OmniState
 
 
-async def _passing_gate(state: OmniState) -> OmniState:
+async def _passing_gate(state: OmniState, *, config: dict[str, Any]) -> OmniState:
     if state.guarded is None:
         state.guarded = {}
     return state
 
 
-async def _failing_gate(state: OmniState) -> OmniState:
+async def _failing_gate(state: OmniState, *, config: dict[str, Any]) -> OmniState:
     raise Unsafe(reason="failing_gate violation")
 
 
-async def _other_failing_gate(state: OmniState) -> OmniState:
+async def _other_failing_gate(state: OmniState, *, config: dict[str, Any]) -> OmniState:
     raise Unsafe(reason="other_failing_gate violation")
 
 
-async def _buggy_gate(state: OmniState) -> OmniState:
+async def _buggy_gate(state: OmniState, *, config: dict[str, Any]) -> OmniState:
     raise ValueError("unexpected bug")
 
 
@@ -41,11 +42,11 @@ class TestGuardrailPolicyHappyPath:
     def test_multiple_passing_gates_all_run(self) -> None:
         calls = []
 
-        async def gate_a(state: OmniState) -> OmniState:
+        async def gate_a(state: OmniState, *, config: dict[str, Any]) -> OmniState:
             calls.append("a")
             return state
 
-        async def gate_b(state: OmniState) -> OmniState:
+        async def gate_b(state: OmniState, *, config: dict[str, Any]) -> OmniState:
             calls.append("b")
             return state
 
@@ -80,7 +81,7 @@ class TestGuardrailPolicyHappyPath:
 
         mutated = {"ran": False}
 
-        async def mutating_gate(state: OmniState) -> OmniState:
+        async def mutating_gate(state: OmniState, *, config: dict[str, Any]) -> OmniState:
             mutated["ran"] = True
             if state.guarded is None:
                 state.guarded = {}
@@ -121,15 +122,15 @@ class TestGuardrailPolicyViolations:
     def test_no_short_circuit_all_gates_run_despite_earlier_violation(self) -> None:
         calls = []
 
-        async def tracked_gate_a(state: OmniState) -> OmniState:
+        async def tracked_gate_a(state: OmniState, *, config: dict[str, Any]) -> OmniState:
             calls.append("a")
             raise Unsafe(reason="a violation")
 
-        async def tracked_gate_b(state: OmniState) -> OmniState:
+        async def tracked_gate_b(state: OmniState, *, config: dict[str, Any]) -> OmniState:
             calls.append("b")
             return state
 
-        async def tracked_gate_c(state: OmniState) -> OmniState:
+        async def tracked_gate_c(state: OmniState, *, config: dict[str, Any]) -> OmniState:
             calls.append("c")
             raise Unsafe(reason="c violation")
 
@@ -156,10 +157,10 @@ class TestGuardrailPolicyViolations:
         assert state.guarded["_other_failing_gate"]["unsafe"] is True
 
     def test_passing_gate_after_violation_still_updates_state(self) -> None:
-        async def gate_a(state: OmniState) -> OmniState:
+        async def gate_a(state: OmniState, *, config: dict[str, Any]) -> OmniState:
             raise Unsafe(reason="a violation")
 
-        async def gate_b(state: OmniState) -> OmniState:
+        async def gate_b(state: OmniState, *, config: dict[str, Any]) -> OmniState:
             if state.guarded is None:
                 state.guarded = {}
             state.guarded["gate_b"] = {"status": "ok"}
@@ -189,11 +190,11 @@ class TestGuardrailPolicyUnexpectedErrors:
     def test_unexpected_exception_does_not_block_remaining_gates(self) -> None:
         calls = []
 
-        async def gate_a(state: OmniState) -> OmniState:
+        async def gate_a(state: OmniState, *, config: dict[str, Any]) -> OmniState:
             calls.append("a")
             raise ValueError("boom")
 
-        async def gate_b(state: OmniState) -> OmniState:
+        async def gate_b(state: OmniState, *, config: dict[str, Any]) -> OmniState:
             calls.append("b")
             return state
 
@@ -206,10 +207,10 @@ class TestGuardrailPolicyUnexpectedErrors:
         assert result.guarded["gate_a"]["exception_type"] == "ValueError"
 
     def test_mix_of_unsafe_and_unexpected_errors(self) -> None:
-        async def gate_unsafe(state: OmniState) -> OmniState:
+        async def gate_unsafe(state: OmniState, *, config: dict[str, Any]) -> OmniState:
             raise Unsafe(reason="blocked")
 
-        async def gate_buggy(state: OmniState) -> OmniState:
+        async def gate_buggy(state: OmniState, *, config: dict[str, Any]) -> OmniState:
             raise RuntimeError("crashed")
 
         policy = GuardrailPolicy(gates=[gate_unsafe, gate_buggy])

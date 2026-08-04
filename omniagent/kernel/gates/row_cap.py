@@ -65,6 +65,18 @@ async def row_cap_gate(state: OmniState, *, config: dict[str, Any]) -> OmniState
             }
             return state
 
+    # An engine that enforces row_cap at the fetch layer (e.g. DuckDBEngine)
+    # trims its own returned batch to row_cap before this gate ever sees it,
+    # so row_count can never exceed max_rows by construction when the two
+    # caps match — `truncated` is the only reliable signal in that case that
+    # the true result set was larger than allowed.
+    if state.result_meta.get("truncated"):
+        reason = (
+            f"Result was truncated to {max_rows} rows — more rows were "
+            f"available than the configured limit"
+        )
+        raise Unsafe(reason=reason)
+
     # Check if row count exceeds the cap
     if row_count > max_rows:
         reason = f"Result row count {row_count} exceeds max_rows limit {max_rows}"

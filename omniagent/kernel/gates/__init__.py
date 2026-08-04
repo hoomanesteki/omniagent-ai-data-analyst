@@ -1,8 +1,7 @@
 """Individual guard gates for safety and policy enforcement."""
 
-from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
 from ..state import OmniState
 from .empty_result import empty_result_gate
@@ -16,13 +15,21 @@ from .sql_allowlist import sql_allowlist_gate
 from .timeout import timeout_gate
 
 
+class GateFn(Protocol):
+    """Shape every gate function conforms to: async, state in, state out."""
+
+    __name__: str
+
+    async def __call__(self, state: OmniState, *, config: dict[str, Any]) -> OmniState: ...
+
+
 @dataclass
 class GuardrailPolicy:
     """Policy defining a set of safety gates applied to state transitions."""
 
-    gates: list[Callable[[OmniState], Any]] = field(default_factory=list)
+    gates: list[GateFn] = field(default_factory=list)
 
-    async def apply(self, state: OmniState) -> OmniState:
+    async def apply(self, state: OmniState, *, config: dict[str, Any] | None = None) -> OmniState:
         """
         Run all gates in order without short-circuiting, so every gate
         leaves an audit trail regardless of earlier violations. Gates are
@@ -37,6 +44,11 @@ class GuardrailPolicy:
 
         Args:
             state: The OmniState to guard.
+            config: Shared config dict passed to every gate — each gate
+                pulls only the keys it cares about (max_rows, timeout_ms,
+                llm_calls_max, semantic_provider, result_store, principal,
+                etc.), so the caller assembles one dict rather than wiring
+                each gate individually.
 
         Returns:
             The modified state with guarded results populated.
@@ -48,13 +60,14 @@ class GuardrailPolicy:
         if state.guarded is None:
             state.guarded = {}
 
+        resolved_config = config or {}
         violations: list[Unsafe] = []
 
         # Run all gates and collect results
         for gate in self.gates:
             gate_name = gate.__name__
             try:
-                state = await gate(state)
+                state = await gate(state, config=resolved_config)
             except Unsafe as e:
                 if state.guarded is None:
                     state.guarded = {}
