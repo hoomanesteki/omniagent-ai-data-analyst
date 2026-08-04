@@ -122,7 +122,6 @@ def make_sql_agent_node(
                 prior_error = exc.reason
                 continue
 
-            new_assumptions = working.assumptions[len(state.assumptions) :]
             return Command(
                 goto="narrator",
                 update={
@@ -131,7 +130,7 @@ def make_sql_agent_node(
                     "result_set": working.result_set,
                     "result_meta": working.result_meta,
                     "guarded": working.guarded,
-                    "assumptions": new_assumptions,
+                    "assumptions": working.assumptions,
                     "llm_calls": llm_calls,
                     "model_calls_by_node": model_calls_by_node,
                     "evidence": {

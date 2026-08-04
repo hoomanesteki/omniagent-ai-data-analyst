@@ -9,6 +9,7 @@ import time
 
 import pytest
 import uvicorn
+from langgraph.checkpoint.memory import InMemorySaver
 
 from omniagent.adapters.semantic.native_yaml import NativeYamlProvider
 from omniagent.agents.graph import build_governed_graph
@@ -71,6 +72,7 @@ def live_service_url(provider, ecommerce_warehouse, monkeypatch):
         model_id="test-model",
         time_resolver=DefaultTimeResolver(),
         guardrail_policy=GuardrailPolicy(gates=ALL_GATES),
+        checkpointer=InMemorySaver(),
     )
     runtime = DatasetRuntime(
         dataset_id="ecommerce",
@@ -78,6 +80,7 @@ def live_service_url(provider, ecommerce_warehouse, monkeypatch):
         description="Test dataset",
         catalog=catalog,
         graph=graph,
+        schema_version=provider.schema_version("ecommerce"),
     )
     app = create_app({"ecommerce": runtime})
 

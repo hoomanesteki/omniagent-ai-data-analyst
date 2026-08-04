@@ -30,6 +30,19 @@ _TASK_INSTRUCTIONS = {
         "(`prior_attempt_sql`) was rejected — fix that specific problem "
         "rather than starting over from scratch."
     ),
+    "route_question": (
+        "The question did not match any known metric by name. Decide what "
+        "to do with it. Set intent to 'sql' if it is plausibly a real "
+        "question about this dataset's underlying data that a SQL query "
+        "could answer, even if it doesn't name a known metric. Set intent "
+        "to 'chat' if it is a greeting, small talk, or a request unrelated "
+        "to this dataset (weather, general knowledge, and so on) that no "
+        "query could ever answer. Set needs_clarification to true only if "
+        "the question is genuinely too vague to act on either way, and "
+        "list one or two clarification_options as short follow-up "
+        "questions. Never guess a metric name that was not explicitly "
+        "given in known_metrics."
+    ),
 }
 
 

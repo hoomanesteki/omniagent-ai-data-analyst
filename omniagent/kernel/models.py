@@ -118,6 +118,13 @@ class AnswerEnvelope(BaseModel):
     assumptions: list[str] = []
     suggestions: list[str] = []
     clarification: dict[str, Any] | None = None
+    # True only when this clarification is a genuinely paused graph run
+    # (interrupt()-based) that the client answers via /resume. A dataset
+    # without the guarded fallback/checkpointer wired still produces a
+    # `kind="clarification"` envelope that simply ended the turn instead
+    # (the client answers that one via /ask with the same thread_id) --
+    # `kind` alone can't tell the two apart, so this field does.
+    resumable: bool = False
     trace_id: str = ""
     thread_id: str = ""
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

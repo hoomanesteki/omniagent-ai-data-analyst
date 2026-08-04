@@ -71,11 +71,13 @@ def _init_state() -> None:
     st.session_state.setdefault("thread_id", None)
     st.session_state.setdefault("turns", [])  # list of {question, envelope}
     st.session_state.setdefault("pending_question", None)
+    st.session_state.setdefault("awaiting_clarification", False)
 
 
 def _reset_thread() -> None:
     st.session_state["thread_id"] = None
     st.session_state["turns"] = []
+    st.session_state["awaiting_clarification"] = False
 
 
 # ---------------------------------------------------------------------------
@@ -235,9 +237,19 @@ def main() -> None:
 
     if question:
         thread_id = st.session_state["thread_id"]
+        awaiting_clarification = st.session_state["awaiting_clarification"]
         with st.spinner("Thinking..."):
-            envelope = resume(thread_id, question) if thread_id else ask(dataset_id, question, None)
+            # /resume only answers a paused clarification -- everything
+            # else (a genuine follow-up, a suggestion, a starter chip)
+            # goes through /ask, which continues the same thread via its
+            # own thread_id just as well; the checkpointer accumulates
+            # message history across either call.
+            if thread_id and awaiting_clarification:
+                envelope = resume(thread_id, question)
+            else:
+                envelope = ask(dataset_id, question, thread_id)
         st.session_state["thread_id"] = envelope.get("thread_id")
+        st.session_state["awaiting_clarification"] = bool(envelope.get("resumable"))
         st.session_state["turns"].append({"question": question, "envelope": envelope})
         st.rerun()
 

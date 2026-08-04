@@ -4,7 +4,7 @@
 FastAPI service and run it.
 
 Deliberately outside omniagent/ entirely, not just outside omniagent.channels
-— the layering contract (.importlinter) keeps omniagent.channels and
+- the layering contract (.importlinter) keeps omniagent.channels and
 omniagent.adapters as parallel top-level layers that must not depend on each
 other, so the module that constructs adapters and hands them to channels has
 to live outside the package's own layered tree. This is the standard
@@ -23,11 +23,16 @@ from __future__ import annotations
 
 import argparse
 import os
+import sqlite3
 from pathlib import Path
 
+from langgraph.checkpoint.sqlite import SqliteSaver
+
+from omniagent.adapters.embeddings import FastEmbedProvider
 from omniagent.adapters.engine.duckdb import DuckDBEngine
 from omniagent.adapters.llm.groq import GroqProvider
 from omniagent.adapters.semantic.native_yaml import NativeYamlProvider
+from omniagent.adapters.vectors import DuckDBVSSStore
 from omniagent.agents.graph import build_governed_graph
 from omniagent.channels.service import DatasetRuntime, create_app
 from omniagent.kernel.gates import (
@@ -42,8 +47,16 @@ from omniagent.kernel.gates import (
     timeout_gate,
 )
 from omniagent.kernel.time_resolver import DefaultTimeResolver
+from omniagent.memory import DuckDBVerifiedQueryStore
 
 DEFAULT_MODEL_ID = "openai/gpt-oss-20b"
+
+# Empirically calibrated in Phase 5 against real bge-small-en-v1.5 scores: a
+# same-shape, different-metric near miss can outscore a genuine paraphrase of
+# something else, so the fast path (which skips regeneration entirely on a
+# hit) needs a much higher bar than the store's own default noise floor.
+# See build_decisions memory decision 11 for the measurements behind this.
+_FAST_PATH_MIN_SCORE = 0.92
 
 _ALL_GATES = [
     sql_allowlist_gate,
@@ -65,10 +78,27 @@ _DATASETS = {
 }
 
 
+def _build_checkpointer(checkpoint_path: str | Path) -> SqliteSaver:
+    """A single SQLite-backed checkpointer shared across every dataset's
+    graph (thread_id is globally unique regardless of dataset, so one file
+    is enough). `SqliteSaver` is a synchronous, single-connection saver -
+    fine at this project's scale (a local-first deployment, not a
+    multi-process production cluster); `AsyncSqliteSaver` or a
+    Postgres-backed saver is the natural upgrade path if that changes,
+    matching how the DuckDB engine and Postgres engine already split that
+    same scale boundary elsewhere in this codebase.
+    """
+    Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(checkpoint_path), check_same_thread=False)
+    return SqliteSaver(conn)
+
+
 def build_default_datasets(
     *,
     packs_root: str | Path = "packs",
     warehouse_path: str | Path = "data/warehouse/omniagent.duckdb",
+    checkpoint_path: str | Path = "data/warehouse/checkpoints.sqlite",
+    verified_queries_path: str | Path = "data/warehouse/verified_queries.duckdb",
     model_id: str = DEFAULT_MODEL_ID,
 ) -> dict[str, DatasetRuntime]:
     """Build every dataset's governed graph against the real Groq API and
@@ -90,6 +120,13 @@ def build_default_datasets(
     engine = DuckDBEngine(warehouse_path, read_only=True)
     policy = GuardrailPolicy(gates=_ALL_GATES)
     time_resolver = DefaultTimeResolver()
+    checkpointer = _build_checkpointer(checkpoint_path)
+
+    embedder = FastEmbedProvider()
+    vector_store = DuckDBVSSStore(verified_queries_path, dim=embedder.dim)
+    verified_query_store = DuckDBVerifiedQueryStore(
+        vector_store, embedder, min_score=_FAST_PATH_MIN_SCORE
+    )
 
     runtimes: dict[str, DatasetRuntime] = {}
     for dataset_id, (label, description) in _DATASETS.items():
@@ -103,6 +140,9 @@ def build_default_datasets(
             model_id=model_id,
             time_resolver=time_resolver,
             guardrail_policy=policy,
+            verified_query_store=verified_query_store,
+            checkpointer=checkpointer,
+            use_router=True,
         )
         runtimes[dataset_id] = DatasetRuntime(
             dataset_id=dataset_id,
@@ -110,6 +150,8 @@ def build_default_datasets(
             description=description,
             catalog=catalog,
             graph=graph,
+            schema_version=provider.schema_version(dataset_id),
+            verified_query_store=verified_query_store,
         )
 
     return runtimes
