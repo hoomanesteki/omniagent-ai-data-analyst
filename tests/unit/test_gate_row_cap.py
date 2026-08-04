@@ -118,6 +118,51 @@ class TestRowCapGateViolation:
         assert "100" in reason
 
 
+class TestRowCapGateTruncatedSignal:
+    """An engine that enforces row_cap at the fetch layer (e.g. DuckDBEngine)
+    trims its own returned batch to row_cap before this gate ever runs, so
+    row_count can never exceed max_rows by construction when the two caps
+    match. `truncated` is the only reliable signal in that case."""
+
+    @pytest.mark.unit
+    def test_truncated_true_raises_unsafe_even_if_row_count_within_cap(self):
+        state = OmniState(
+            thread_id="test_thread",
+            result_meta={"row_count": 1, "truncated": True},
+        )
+
+        with pytest.raises(Unsafe) as exc_info:
+            asyncio.run(row_cap_gate(state, config={"max_rows": 1}))
+
+        assert "truncated" in exc_info.value.reason.lower()
+        assert "1" in exc_info.value.reason
+
+    @pytest.mark.unit
+    def test_truncated_false_with_row_count_within_cap_passes(self):
+        state = OmniState(
+            thread_id="test_thread",
+            result_meta={"row_count": 1, "truncated": False},
+        )
+
+        result = asyncio.run(row_cap_gate(state, config={"max_rows": 1}))
+
+        assert result.guarded["row_cap_gate"]["status"] == "within_limit"
+
+    @pytest.mark.unit
+    def test_truncated_absent_falls_back_to_row_count_comparison(self):
+        """result_meta without a `truncated` key at all (e.g. hand-built in
+        older tests or by an engine that doesn't report it) must not be
+        treated as truncated."""
+        state = OmniState(
+            thread_id="test_thread",
+            result_meta={"row_count": 50},
+        )
+
+        result = asyncio.run(row_cap_gate(state, config={"max_rows": 100}))
+
+        assert result.guarded["row_cap_gate"]["status"] == "within_limit"
+
+
 class TestRowCapGateEdgeCases:
     """Test edge cases and boundary conditions."""
 
