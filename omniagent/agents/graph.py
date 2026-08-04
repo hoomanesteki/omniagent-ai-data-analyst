@@ -1,10 +1,11 @@
-"""Governed graph: master -> semantic_agent -> executor.
+"""Governed graph: master -> semantic_agent -> executor -> narrator.
 
-This wires the deterministic-first path only (Phase 3's scope): a question
-either matches the catalog deterministically and flows through to a
-governed, gate-checked answer, or it terminates in a clarification. The SQL
-fallback (Phase 5), model-based router (Phase 6), and narration (Phase 7)
-attach to this same graph later without changing this wiring.
+This wires the deterministic-first path: a question either matches the
+catalog deterministically and flows through to a governed, gate-checked,
+narrated answer, or it terminates early in a clarification (master) or an
+error (semantic_agent/executor) — narrator only runs once executor has a
+real result to describe. The SQL fallback (Phase 5) and model-based router
+(Phase 6) attach to this same graph later without changing this wiring.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from langgraph.graph.state import CompiledStateGraph
 
 from omniagent.agents.executor import make_executor_node
 from omniagent.agents.master import make_master_node
+from omniagent.agents.narrator import make_narrator_node
 from omniagent.agents.semantic_agent import make_semantic_agent_node
 from omniagent.kernel.catalog import Catalog
 from omniagent.kernel.gates import GuardrailPolicy
@@ -81,8 +83,9 @@ def build_governed_graph(
             gate_config=gate_config,
         ),
     )
+    graph.add_node("narrator", make_narrator_node(catalog))  # type: ignore[call-overload]
 
     graph.add_edge(START, "master")
-    graph.add_edge("executor", END)
+    graph.add_edge("narrator", END)
 
     return graph.compile()

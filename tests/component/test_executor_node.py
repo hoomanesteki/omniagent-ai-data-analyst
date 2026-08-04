@@ -59,7 +59,7 @@ class TestExecutorHappyPath:
 
         cmd = asyncio.run(node(state))
 
-        assert cmd.goto == END
+        assert cmd.goto == "narrator"
         assert "error" not in cmd.update or cmd.update.get("error") is None
         assert cmd.update["result_set"] == [{"gross_revenue": 225.0}]
         assert cmd.update["result_meta"]["row_count"] == 1

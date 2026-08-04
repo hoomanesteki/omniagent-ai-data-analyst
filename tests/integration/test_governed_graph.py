@@ -90,6 +90,11 @@ class TestGovernedPathAcceptance:
         # (R2 on O2 is pending, excluded) => refunds = 20.
         # net_revenue = 225 - 20 = 205.
         assert result["result_set"] == [{"net_revenue": 205.0}]
+        assert result["narration"] == "Net revenue was $205.00."
+        assert result["chart_spec"] is None  # single KPI, no chart
+        # 1.0 catalog match score minus the row_cap_gate's always-present
+        # "result capped at N rows" transparency notice (one assumption).
+        assert result["confidence"] == 0.9
 
     @pytest.mark.integration
     async def test_governed_path_never_touches_sql_fallback(self, provider, ecommerce_warehouse):
@@ -110,6 +115,24 @@ class TestGovernedPathAcceptance:
         assert result["route"] == "semantic_agent"
         assert result["matched_metric"] == "order_count"
         assert result["result_set"] == [{"order_count": 3}]
+
+    @pytest.mark.integration
+    async def test_breakdown_question_produces_chart(self, provider, ecommerce_warehouse):
+        graph, llm = _build_graph(
+            provider, ecommerce_warehouse, [SemanticExtraction(time_phrase=None, filters=[])]
+        )
+        initial = OmniState(
+            thread_id="t1",
+            dataset_id="ecommerce",
+            messages=[{"role": "user", "content": "gross revenue by channel"}],
+        )
+
+        result = await graph.ainvoke(initial)
+
+        llm.assert_call_count(1)
+        assert result["chart_spec"] is not None
+        assert result["chart_spec"]["mark"] == "bar"
+        assert "web" in result["narration"]
 
 
 class TestGovernedPathClarification:
