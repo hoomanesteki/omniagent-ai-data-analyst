@@ -6,6 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from omniagent.adapters.llm.prompting import build_prompt
 from omniagent.kernel.ports.llm import LLMProvider, ModelCapabilities
 
 
@@ -96,10 +97,22 @@ class OllamaProvider(LLMProvider):
         raise NotImplementedError("Use langchain-ollama instead")
 
     def structured(self, model_id: str, req: dict[str, Any], schema: type[BaseModel]) -> BaseModel:
-        """Structured output (not implemented in scaffold)."""
-        raise NotImplementedError(
-            "Use langchain-ollama with prompt engineering for structured output"
-        )
+        """Structured extraction call via langchain-ollama.
+
+        Local models generally lack native JSON-schema constraining, so
+        this relies on langchain's function-calling-style structured output
+        emulation — noticeably less reliable than Groq's native mode, which
+        is exactly the tradeoff of the local/free tier this provider exists
+        for.
+        """
+        from langchain_ollama import ChatOllama
+
+        chat = ChatOllama(model=model_id, base_url=self.base_url, temperature=0)
+        structured_chat = chat.with_structured_output(schema)
+        result = structured_chat.invoke(build_prompt(req))
+        if not isinstance(result, schema):
+            result = schema.model_validate(result)
+        return result
 
     def stream(self, model_id: str, req: dict[str, Any]) -> Iterator[str]:
         """Token stream (not implemented in scaffold)."""

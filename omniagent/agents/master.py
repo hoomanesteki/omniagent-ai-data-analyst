@@ -45,7 +45,14 @@ def make_master_node(catalog: Catalog) -> GraphNode:
                     "needs_human": True,
                     "clarification": {
                         "question": "Which metric did you mean?",
-                        "options": list(result.candidates),
+                        # Labels, not raw snake_case names — clicking one
+                        # round-trips as the next question, and
+                        # catalog.match() matches label text too. If two
+                        # candidates ever share a label, the real packs
+                        # never do (verified), and re-asking would be
+                        # genuinely ambiguous to a human reader too, not
+                        # just to the matcher.
+                        "options": [catalog.metrics[name].label for name in result.candidates],
                     },
                 },
             )
@@ -63,7 +70,7 @@ def make_master_node(catalog: Catalog) -> GraphNode:
                         "I couldn't match that to a known metric for this dataset. "
                         "Here's what I can answer:"
                     ),
-                    "options": list(catalog.metric_names()),
+                    "options": [catalog.metrics[name].label for name in catalog.metric_names()],
                 },
             },
         )

@@ -23,12 +23,13 @@ dependencies = [
 [project.optional-dependencies]
 duckdb = ["duckdb>=1.0.0"]
 postgres = ["psycopg[binary]>=3.1.0"]
-metricflow = ["dbt-metricflow[duckdb]>=0.13.0", "dbt-core>=1.10.4,<1.12.0", "dbt-duckdb>=1.10.0,<1.11.0"]
+metricflow = ["dbt-metricflow[dbt-duckdb]>=0.13.0", "dbt-core>=1.10.4,<1.12.0", "dbt-duckdb>=1.10.0,<1.11.0"]
 groq = ["langchain-groq>=0.1.0"]
 ollama = ["langchain-ollama>=0.1.0"]
-vectors = ["fastembed>=0.3.0", "duckdb[httpfs]"]
+vectors = ["fastembed>=0.3.0", "duckdb>=1.0.0"]
 eval = ["deepeval>=0.21.0", "ragas>=0.1.0"]
 streamlit = ["streamlit>=1.28.0"]
+service = ["fastapi>=0.110.0", "uvicorn[standard]>=0.29.0"]
 mcp = ["mcp>=1.0.0"]
 local = ["ollama"]
 dev = [
@@ -46,7 +47,7 @@ dev = [
   "sqlfluff>=3.0.0",
 ]
 all = [
-  "omniagent[duckdb,postgres,metricflow,groq,vectors,eval,streamlit,mcp,dev]"
+  "omniagent[duckdb,postgres,metricflow,groq,vectors,eval,streamlit,service,mcp,dev]"
 ]
 
 [tool.pytest.ini_options]

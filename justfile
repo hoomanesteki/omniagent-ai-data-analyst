@@ -6,7 +6,7 @@ install:
 lint:
     uv run ruff check omniagent tests
     uv run ruff format --check omniagent tests
-    uv run mypy omniagent/kernel omniagent/agents
+    uv run mypy omniagent/kernel omniagent/agents omniagent/channels
     uv run import-linter lint
 
 test:
