@@ -722,14 +722,19 @@ class _QueryPlan:
         emitted = {root}
         for model_name in sorted(needed, key=lambda name: self._depth(name, parent, root)):
             model = pack_models[model_name]
-            # The condition is written on whichever model declared the join, so
-            # take it from there rather than from the traversal direction.
+            # The type and condition are written on whichever model declared
+            # the join, so take both from there rather than from the
+            # traversal direction. `model` itself only owns them when its
+            # own `join_to` is the edge being traversed; otherwise the
+            # parent declared this edge (model_name.join_to pointing
+            # elsewhere, or nowhere), and using model's own join_type/
+            # join_condition here would silently splice in an unrelated
+            # join it declared in a different direction.
             owner = model if model.join_to is not None and model.join_to in emitted else None
             if owner is None:
                 owner = pack_models[parent[model_name]]
             joins.append(
-                f"{model.join_type.upper()} JOIN {model.table} AS {model_name} "
-                f"ON {(model.join_condition or owner.join_condition)}"
+                f"{owner.join_type.upper()} JOIN {model.table} AS {model_name} ON {owner.join_condition}"
             )
             emitted.add(model_name)
 
