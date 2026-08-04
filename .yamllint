@@ -1,0 +1,11 @@
+extends: default
+
+rules:
+  # GitHub Actions workflows use bare `on:`/`true`/`false` as literal map
+  # keys and values, not YAML 1.1 booleans, and don't start with `---` --
+  # both are yamllint false positives on this file shape, not real issues.
+  document-start: disable
+  truthy:
+    check-keys: false
+  line-length:
+    max: 160

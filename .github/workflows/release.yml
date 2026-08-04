@@ -1,0 +1,57 @@
+name: Release
+
+# Triggered by pushing a tag like v2.0.0. Validates the tag matches
+# pyproject.toml's own version (the single source of truth for what this
+# release actually is) before creating a GitHub Release with
+# auto-generated notes from Conventional Commits history. Does not publish
+# to a package registry or build a container image -- those land with
+# Phase 11's packaging work, not invented here ahead of that.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  release:
+    name: Validate and publish GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.x"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --locked --all-extras --dev
+
+      - name: Verify tag matches pyproject.toml version
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          pkg_version="$(uv run python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          if [ "$tag_version" != "$pkg_version" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match pyproject.toml version $pkg_version" >&2
+            exit 1
+          fi
+
+      - name: Run full CI gate before releasing
+        run: |
+          uv run ruff check omniagent tests scripts
+          uv run ruff format --check omniagent tests scripts
+          uv run mypy omniagent/kernel omniagent/agents omniagent/channels omniagent/adapters omniagent/memory omniagent/eval
+          uv run import-linter lint
+          uv run pytest tests/unit tests/contract tests/component tests/perf -n auto --tb=short --no-cov
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true

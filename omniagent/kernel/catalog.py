@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass, field
+from functools import lru_cache
 
 # Tie-break priority when a metric's name, label, and synonyms normalize to
 # phrases of identical length — lower wins. Keeps Match.matched_on/score
@@ -153,9 +154,19 @@ class Catalog:
         return tuple(name for _, name in sorted(hits, reverse=True))
 
     @staticmethod
+    @lru_cache(maxsize=4096)
+    def _phrase_pattern(needle: str) -> re.Pattern[str]:
+        """Compiling a whole-word pattern is the expensive part of a match
+        call, and the same phrases (a catalog's own metric/dimension names,
+        labels, synonyms) get checked over and over across every question
+        asked against one catalog — cache the compiled pattern per phrase
+        rather than recompiling it on every single call."""
+        return re.compile(rf"(?<!\w){re.escape(needle)}(?!\w)")
+
+    @staticmethod
     def _contains_phrase(haystack: str, needle: str) -> bool:
         """Substring match constrained to whole words."""
-        return re.search(rf"(?<!\w){re.escape(needle)}(?!\w)", haystack) is not None
+        return Catalog._phrase_pattern(needle).search(haystack) is not None
 
     @staticmethod
     def _phrases(name: str, metric: MetricInfo) -> list[tuple[str, str]]:

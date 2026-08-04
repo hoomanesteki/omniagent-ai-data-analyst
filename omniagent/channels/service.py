@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -36,8 +37,12 @@ from omniagent.agents.suggester import suggest_followups
 from omniagent.kernel.catalog import Catalog
 from omniagent.kernel.models import AnswerEnvelope, ChartSpec, MetricValue
 from omniagent.kernel.ports.identity import Scope
+from omniagent.kernel.ports.ledger import AnswerLedgerStore, LedgerEntry
 from omniagent.kernel.ports.stores import VerifiedQuery, VerifiedQueryStore
 from omniagent.kernel.state import OmniState
+from omniagent.kernel.telemetry import Tracer, mask_value
+
+_logger = logging.getLogger("omniagent.service")
 
 
 @dataclass
@@ -51,6 +56,11 @@ class DatasetRuntime:
     graph: CompiledStateGraph[OmniState, None, OmniState, OmniState]
     schema_version: str = ""
     verified_query_store: VerifiedQueryStore | None = None
+    answer_ledger: AnswerLedgerStore | None = None
+    # The same dict object passed as `tracers=` to build_governed_graph, so
+    # a completed turn's spans can be read back out here -- see graph.py's
+    # `_traced` wrapper for how nodes populate it by thread_id.
+    tracers: dict[str, Tracer] | None = None
 
 
 @dataclass
@@ -180,15 +190,51 @@ def create_app(datasets: dict[str, DatasetRuntime]) -> FastAPI:  # noqa: C901 - 
     threads: dict[str, _ThreadInfo] = {}
 
     def _record_turn(
-        thread_id: str, dataset_id: str, question: str, result: dict[str, Any]
+        runtime: DatasetRuntime,
+        thread_id: str,
+        trace_id: str,
+        question: str,
+        result: dict[str, Any],
     ) -> None:
         threads[thread_id] = _ThreadInfo(
-            dataset_id=dataset_id,
+            dataset_id=runtime.dataset_id,
             last_question=question,
             last_executed_sql=result.get("executed_sql"),
             last_result_set=result.get("result_set"),
             last_matched_metric=result.get("matched_metric"),
         )
+        if runtime.answer_ledger is not None:
+            runtime.answer_ledger.record(
+                LedgerEntry(
+                    trace_id=trace_id,
+                    thread_id=thread_id,
+                    dataset_id=runtime.dataset_id,
+                    question=mask_value(question),
+                    route=result.get("route"),
+                    matched_metric=result.get("matched_metric"),
+                    executed_sql=result.get("executed_sql"),
+                    confidence=result.get("confidence"),
+                    error=result.get("error"),
+                    created_at=datetime.now(UTC),
+                )
+            )
+
+        # Pop rather than peek: a paused (interrupt()) turn's tracer stays
+        # under the same thread_id across the eventual /resume call (see
+        # graph.py's `_traced` wrapper), so only remove it once a turn
+        # actually finishes without pausing -- otherwise resume would start
+        # a fresh Tracer instead of continuing the same one and no node
+        # from the first half of the turn would show up in the final trace.
+        if runtime.tracers is not None and thread_id in runtime.tracers:
+            trace = runtime.tracers[thread_id].trace
+            if not result.get("__interrupt__"):
+                del runtime.tracers[thread_id]
+            _logger.debug(
+                "trace_id=%s thread_id=%s spans=%s",
+                trace_id,
+                thread_id,
+                [(span.name, round(span.duration_ms, 2), span.error) for span in trace.spans],
+            )
 
     @app.get("/health")
     async def health() -> dict[str, str]:
@@ -213,6 +259,7 @@ def create_app(datasets: dict[str, DatasetRuntime]) -> FastAPI:  # noqa: C901 - 
             raise HTTPException(status_code=404, detail=f"Unknown dataset {request.dataset_id!r}")
 
         thread_id = request.thread_id or str(uuid.uuid4())
+        trace_id = str(uuid.uuid4())
         config = _thread_config(thread_id)
 
         state = OmniState(
@@ -222,10 +269,10 @@ def create_app(datasets: dict[str, DatasetRuntime]) -> FastAPI:  # noqa: C901 - 
             messages=[{"role": "user", "content": request.question}],
         )
         result = await runtime.graph.ainvoke(state, config)
-        _record_turn(thread_id, request.dataset_id, request.question, result)
+        _record_turn(runtime, thread_id, trace_id, request.question, result)
 
         return _result_to_envelope(
-            result, thread_id=thread_id, trace_id=str(uuid.uuid4()), catalog=runtime.catalog
+            result, thread_id=thread_id, trace_id=trace_id, catalog=runtime.catalog
         )
 
     @app.post("/resume", response_model=AnswerEnvelope)
@@ -235,6 +282,7 @@ def create_app(datasets: dict[str, DatasetRuntime]) -> FastAPI:  # noqa: C901 - 
             raise HTTPException(status_code=404, detail=f"Unknown thread {request.thread_id!r}")
 
         runtime = datasets[info.dataset_id]
+        trace_id = str(uuid.uuid4())
         config = _thread_config(request.thread_id)
 
         state = await runtime.graph.aget_state(config)
@@ -245,12 +293,12 @@ def create_app(datasets: dict[str, DatasetRuntime]) -> FastAPI:  # noqa: C901 - 
             )
 
         result = await runtime.graph.ainvoke(Command(resume=request.message), config)
-        _record_turn(request.thread_id, info.dataset_id, request.message, result)
+        _record_turn(runtime, request.thread_id, trace_id, request.message, result)
 
         return _result_to_envelope(
             result,
             thread_id=request.thread_id,
-            trace_id=str(uuid.uuid4()),
+            trace_id=trace_id,
             catalog=runtime.catalog,
         )
 
