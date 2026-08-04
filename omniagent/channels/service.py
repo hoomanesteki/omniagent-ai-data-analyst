@@ -23,6 +23,8 @@ import hashlib
 import json
 import logging
 import uuid
+from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -64,7 +66,7 @@ class DatasetRuntime:
 
 
 @dataclass
-class _ThreadInfo:
+class ThreadInfo:
     """The minimum the service needs about a thread outside the checkpointer:
     which dataset it belongs to (so /resume knows which graph to invoke) and
     the last turn's question/answer, so a thumbs-up on /feedback can create
@@ -109,20 +111,20 @@ class DatasetSummary(BaseModel):
     starter_questions: list[str]
 
 
-def _starter_questions(catalog: Catalog, limit: int = 4) -> list[str]:
+def starter_questions(catalog: Catalog, limit: int = 4) -> list[str]:
     return [catalog.metrics[name].label for name in catalog.metric_names()[:limit]]
 
 
-def _result_signature(result_set: list[dict[str, Any]] | None) -> str:
+def result_signature(result_set: list[dict[str, Any]] | None) -> str:
     payload = json.dumps(result_set or [], sort_keys=True, default=str)
     return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 
-def _thread_config(thread_id: str) -> RunnableConfig:
+def thread_config(thread_id: str) -> RunnableConfig:
     return {"configurable": {"thread_id": thread_id}}
 
 
-def _result_to_envelope(
+def result_to_envelope(
     result: dict[str, Any], *, thread_id: str, trace_id: str, catalog: Catalog
 ) -> AnswerEnvelope:
     interrupts = result.get("__interrupt__")
@@ -184,57 +186,78 @@ def _result_to_envelope(
     )
 
 
-def create_app(datasets: dict[str, DatasetRuntime]) -> FastAPI:  # noqa: C901 - five small route handlers as closures, not one branchy function
-    """Build the FastAPI app over an already-constructed set of dataset runtimes."""
-    app = FastAPI(title="OmniAgent", version="2.0.0")
-    threads: dict[str, _ThreadInfo] = {}
-
-    def _record_turn(
-        runtime: DatasetRuntime,
-        thread_id: str,
-        trace_id: str,
-        question: str,
-        result: dict[str, Any],
-    ) -> None:
-        threads[thread_id] = _ThreadInfo(
-            dataset_id=runtime.dataset_id,
-            last_question=question,
-            last_executed_sql=result.get("executed_sql"),
-            last_result_set=result.get("result_set"),
-            last_matched_metric=result.get("matched_metric"),
+def record_turn(
+    runtime: DatasetRuntime,
+    threads: dict[str, ThreadInfo],
+    thread_id: str,
+    trace_id: str,
+    question: str,
+    result: dict[str, Any],
+) -> None:
+    """Update thread bookkeeping, write an answer-ledger entry, and retire a
+    completed turn's tracer. Shared by every channel that drives a
+    DatasetRuntime's graph (FastAPI routes, the MCP server) so none of them
+    duplicates this logic on its own."""
+    threads[thread_id] = ThreadInfo(
+        dataset_id=runtime.dataset_id,
+        last_question=question,
+        last_executed_sql=result.get("executed_sql"),
+        last_result_set=result.get("result_set"),
+        last_matched_metric=result.get("matched_metric"),
+    )
+    if runtime.answer_ledger is not None:
+        runtime.answer_ledger.record(
+            LedgerEntry(
+                trace_id=trace_id,
+                thread_id=thread_id,
+                dataset_id=runtime.dataset_id,
+                question=mask_value(question),
+                route=result.get("route"),
+                matched_metric=result.get("matched_metric"),
+                executed_sql=result.get("executed_sql"),
+                confidence=result.get("confidence"),
+                error=result.get("error"),
+                created_at=datetime.now(UTC),
+            )
         )
-        if runtime.answer_ledger is not None:
-            runtime.answer_ledger.record(
-                LedgerEntry(
-                    trace_id=trace_id,
-                    thread_id=thread_id,
-                    dataset_id=runtime.dataset_id,
-                    question=mask_value(question),
-                    route=result.get("route"),
-                    matched_metric=result.get("matched_metric"),
-                    executed_sql=result.get("executed_sql"),
-                    confidence=result.get("confidence"),
-                    error=result.get("error"),
-                    created_at=datetime.now(UTC),
-                )
-            )
 
-        # Pop rather than peek: a paused (interrupt()) turn's tracer stays
-        # under the same thread_id across the eventual /resume call (see
-        # graph.py's `_traced` wrapper), so only remove it once a turn
-        # actually finishes without pausing -- otherwise resume would start
-        # a fresh Tracer instead of continuing the same one and no node
-        # from the first half of the turn would show up in the final trace.
-        if runtime.tracers is not None and thread_id in runtime.tracers:
-            trace = runtime.tracers[thread_id].trace
-            if not result.get("__interrupt__"):
-                del runtime.tracers[thread_id]
-            _logger.debug(
-                "trace_id=%s thread_id=%s spans=%s",
-                trace_id,
-                thread_id,
-                [(span.name, round(span.duration_ms, 2), span.error) for span in trace.spans],
-            )
+    # Pop rather than peek: a paused (interrupt()) turn's tracer stays
+    # under the same thread_id across the eventual /resume call (see
+    # graph.py's `_traced` wrapper), so only remove it once a turn
+    # actually finishes without pausing -- otherwise resume would start
+    # a fresh Tracer instead of continuing the same one and no node
+    # from the first half of the turn would show up in the final trace.
+    if runtime.tracers is not None and thread_id in runtime.tracers:
+        trace = runtime.tracers[thread_id].trace
+        if not result.get("__interrupt__"):
+            del runtime.tracers[thread_id]
+        _logger.debug(
+            "trace_id=%s thread_id=%s spans=%s",
+            trace_id,
+            thread_id,
+            [(span.name, round(span.duration_ms, 2), span.error) for span in trace.spans],
+        )
+
+
+def create_app(  # noqa: C901 - five small route handlers as closures, not one branchy function
+    datasets: dict[str, DatasetRuntime],
+    *,
+    lifespan: Callable[[FastAPI], AbstractAsyncContextManager[None]] | None = None,
+) -> FastAPI:
+    """Build the FastAPI app over a set of dataset runtimes.
+
+    `datasets` may be empty at call time and populated later by `lifespan`
+    (mutated in place, not reassigned): every route below reads `datasets`
+    fresh on each request rather than snapshotting it, so this works as long
+    as `lifespan` finishes populating it before serving any request, which
+    ASGI's startup/shutdown protocol already guarantees. A production
+    composition root needs this because an async checkpointer connection
+    (`AsyncSqliteSaver`) has to be opened inside the event loop uvicorn
+    actually serves requests on, not a throwaway one used only to build
+    graphs before `uvicorn.run()` starts its own.
+    """
+    app = FastAPI(title="OmniAgent", version="2.0.0", lifespan=lifespan)
+    threads: dict[str, ThreadInfo] = {}
 
     @app.get("/health")
     async def health() -> dict[str, str]:
@@ -247,7 +270,7 @@ def create_app(datasets: dict[str, DatasetRuntime]) -> FastAPI:  # noqa: C901 - 
                 dataset_id=runtime.dataset_id,
                 label=runtime.label,
                 description=runtime.description,
-                starter_questions=_starter_questions(runtime.catalog),
+                starter_questions=starter_questions(runtime.catalog),
             )
             for runtime in datasets.values()
         ]
@@ -260,7 +283,7 @@ def create_app(datasets: dict[str, DatasetRuntime]) -> FastAPI:  # noqa: C901 - 
 
         thread_id = request.thread_id or str(uuid.uuid4())
         trace_id = str(uuid.uuid4())
-        config = _thread_config(thread_id)
+        config = thread_config(thread_id)
 
         state = OmniState(
             thread_id=thread_id,
@@ -269,9 +292,9 @@ def create_app(datasets: dict[str, DatasetRuntime]) -> FastAPI:  # noqa: C901 - 
             messages=[{"role": "user", "content": request.question}],
         )
         result = await runtime.graph.ainvoke(state, config)
-        _record_turn(runtime, thread_id, trace_id, request.question, result)
+        record_turn(runtime, threads, thread_id, trace_id, request.question, result)
 
-        return _result_to_envelope(
+        return result_to_envelope(
             result, thread_id=thread_id, trace_id=trace_id, catalog=runtime.catalog
         )
 
@@ -283,7 +306,7 @@ def create_app(datasets: dict[str, DatasetRuntime]) -> FastAPI:  # noqa: C901 - 
 
         runtime = datasets[info.dataset_id]
         trace_id = str(uuid.uuid4())
-        config = _thread_config(request.thread_id)
+        config = thread_config(request.thread_id)
 
         state = await runtime.graph.aget_state(config)
         if not state.next:
@@ -293,9 +316,9 @@ def create_app(datasets: dict[str, DatasetRuntime]) -> FastAPI:  # noqa: C901 - 
             )
 
         result = await runtime.graph.ainvoke(Command(resume=request.message), config)
-        _record_turn(runtime, request.thread_id, trace_id, request.message, result)
+        record_turn(runtime, threads, request.thread_id, trace_id, request.message, result)
 
-        return _result_to_envelope(
+        return result_to_envelope(
             result,
             thread_id=request.thread_id,
             trace_id=trace_id,
@@ -332,7 +355,7 @@ def create_app(datasets: dict[str, DatasetRuntime]) -> FastAPI:  # noqa: C901 - 
                 VerifiedQuery(
                     question=info.last_question,
                     artifact=info.last_executed_sql,
-                    result_signature=_result_signature(info.last_result_set),
+                    result_signature=result_signature(info.last_result_set),
                     status="approved",
                     approved_by="api",
                     created_at=datetime.now(UTC),

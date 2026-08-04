@@ -1,0 +1,66 @@
+# `docker compose up` reproduces a correct answer end to end: `init`
+# generates the sample data and loads the DuckDB warehouse once, `api`
+# waits for that to finish before serving, and `ui` waits for `api`. The
+# `mcp` service is behind a profile since most runs only need the REST API
+# and the UI -- `docker compose --profile mcp up` adds it.
+#
+# Requires GROQ_API_KEY in the environment (or a .env file next to this
+# file, since `just` and this compose file both load dotenv).
+
+services:
+  init:
+    build: .
+    command: >
+      sh -c "python scripts/generate_samples.py && python scripts/load_warehouse.py"
+    volumes:
+      - omniagent_data:/app/data
+
+  api:
+    build: .
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY}
+    ports:
+      - "8000:8000"
+    volumes:
+      - omniagent_data:/app/data
+    command: ["python", "scripts/serve.py", "--host", "0.0.0.0", "--port", "8000"]
+
+  ui:
+    build: .
+    depends_on:
+      - api
+    environment:
+      - OMNIAGENT_API_URL=http://api:8000
+    ports:
+      - "8501:8501"
+    command:
+      [
+        "streamlit",
+        "run",
+        "omniagent/channels/streamlit_app.py",
+        "--server.address",
+        "0.0.0.0",
+        "--server.port",
+        "8501",
+      ]
+
+  mcp:
+    build: .
+    profiles: ["mcp"]
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY}
+    ports:
+      - "8100:8100"
+    volumes:
+      - omniagent_data:/app/data
+    command:
+      ["python", "scripts/serve_mcp.py", "--transport", "streamable-http", "--port", "8100"]
+
+volumes:
+  omniagent_data:
