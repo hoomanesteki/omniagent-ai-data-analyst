@@ -4,19 +4,19 @@ install:
     uv sync --locked --all-extras --dev
 
 lint:
-    uv run ruff check omniagent tests
-    uv run ruff format --check omniagent tests
-    uv run mypy omniagent/kernel omniagent/agents omniagent/channels omniagent/adapters omniagent/memory
+    uv run ruff check omniagent tests scripts
+    uv run ruff format --check omniagent tests scripts
+    uv run mypy omniagent/kernel omniagent/agents omniagent/channels omniagent/adapters omniagent/memory omniagent/eval
     uv run import-linter lint
 
 test:
-    uv run pytest tests/unit tests/contract tests/component -n auto --tb=short
+    uv run pytest tests/unit tests/contract tests/component tests/perf -n auto --tb=short
 
 test-all:
     uv run pytest tests -n auto --tb=short
 
 coverage:
-    uv run pytest tests/unit tests/contract tests/component --cov=omniagent --cov-report=term-missing --cov-report=xml
+    uv run pytest tests/unit tests/contract tests/component tests/perf --cov=omniagent --cov-report=term-missing --cov-report=xml
 
 ci: lint test
 

@@ -130,6 +130,17 @@ class TestCatalogMatch:
         assert isinstance(result, Match)
         assert "orders.channel" in result.dimensions
 
+    def test_phrase_pattern_cache_does_not_cross_contaminate_between_phrases(self, catalog):
+        """_contains_phrase's compiled-pattern cache (added once catalog.match
+        was found to recompile every phrase's regex on every call, ~20x
+        slower against a few hundred metrics) is keyed by the phrase text
+        itself -- confirm two different phrases still match independently
+        rather than one cached pattern leaking into another's result."""
+        assert catalog.match("net revenue") is not None
+        result = catalog.match("gross revenue")
+        assert isinstance(result, Match)
+        assert result.metric == "gross_revenue"
+
 
 class TestCatalogMatchDimensions:
     def test_matches_dimension_by_label(self, catalog):

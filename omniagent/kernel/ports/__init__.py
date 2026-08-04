@@ -15,6 +15,7 @@ from .grounding import (
     TabularEvidence,
 )
 from .identity import Principal, Scope
+from .ledger import AnswerLedgerStore, LedgerEntry
 from .llm import LLMProvider, ModelCapabilities
 from .semantic import (
     CompiledQuery,
@@ -58,4 +59,6 @@ __all__ = [
     "DocumentEvidence",
     "GroundingChecker",
     "GroundingVerdict",
+    "AnswerLedgerStore",
+    "LedgerEntry",
 ]

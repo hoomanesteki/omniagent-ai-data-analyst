@@ -30,6 +30,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 
 from omniagent.adapters.embeddings import FastEmbedProvider
 from omniagent.adapters.engine.duckdb import DuckDBEngine
+from omniagent.adapters.ledger import DuckDBAnswerLedger
 from omniagent.adapters.llm.groq import GroqProvider
 from omniagent.adapters.semantic.native_yaml import NativeYamlProvider
 from omniagent.adapters.vectors import DuckDBVSSStore
@@ -46,6 +47,7 @@ from omniagent.kernel.gates import (
     sql_allowlist_gate,
     timeout_gate,
 )
+from omniagent.kernel.telemetry import Tracer
 from omniagent.kernel.time_resolver import DefaultTimeResolver
 from omniagent.memory import DuckDBVerifiedQueryStore
 
@@ -99,6 +101,7 @@ def build_default_datasets(
     warehouse_path: str | Path = "data/warehouse/omniagent.duckdb",
     checkpoint_path: str | Path = "data/warehouse/checkpoints.sqlite",
     verified_queries_path: str | Path = "data/warehouse/verified_queries.duckdb",
+    answer_ledger_path: str | Path = "data/warehouse/answer_ledger.duckdb",
     model_id: str = DEFAULT_MODEL_ID,
 ) -> dict[str, DatasetRuntime]:
     """Build every dataset's governed graph against the real Groq API and
@@ -127,6 +130,14 @@ def build_default_datasets(
     verified_query_store = DuckDBVerifiedQueryStore(
         vector_store, embedder, min_score=_FAST_PATH_MIN_SCORE
     )
+    answer_ledger = DuckDBAnswerLedger(answer_ledger_path)
+
+    # One shared registry across every dataset's graph, keyed by thread_id
+    # (globally unique regardless of dataset): each turn's node spans land
+    # here (see agents/graph.py's `_traced` wrapper), and the answer
+    # ledger's `question` field is masked via the same telemetry module
+    # before it is ever written to disk.
+    tracers: dict[str, Tracer] = {}
 
     runtimes: dict[str, DatasetRuntime] = {}
     for dataset_id, (label, description) in _DATASETS.items():
@@ -143,6 +154,7 @@ def build_default_datasets(
             verified_query_store=verified_query_store,
             checkpointer=checkpointer,
             use_router=True,
+            tracers=tracers,
         )
         runtimes[dataset_id] = DatasetRuntime(
             dataset_id=dataset_id,
@@ -152,6 +164,8 @@ def build_default_datasets(
             graph=graph,
             schema_version=provider.schema_version(dataset_id),
             verified_query_store=verified_query_store,
+            answer_ledger=answer_ledger,
+            tracers=tracers,
         )
 
     return runtimes

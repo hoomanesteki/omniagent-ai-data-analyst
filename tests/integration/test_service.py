@@ -66,6 +66,8 @@ def _client(
     *,
     verified_query_store=None,
     use_router=False,
+    answer_ledger=None,
+    tracers=None,
 ):
     catalog = provider.catalog("ecommerce")
     llm = ScriptedLLM(script)
@@ -82,6 +84,7 @@ def _client(
         verified_query_store=verified_query_store,
         checkpointer=InMemorySaver(),
         use_router=use_router,
+        tracers=tracers,
     )
     runtime = DatasetRuntime(
         dataset_id="ecommerce",
@@ -91,6 +94,8 @@ def _client(
         graph=graph,
         schema_version=provider.schema_version("ecommerce"),
         verified_query_store=verified_query_store,
+        answer_ledger=answer_ledger,
+        tracers=tracers,
     )
     app = create_app({"ecommerce": runtime})
     return TestClient(app), llm
@@ -365,3 +370,132 @@ class TestFeedback:
         )
 
         assert response.status_code == 422
+
+
+@pytest.mark.integration
+class TestAnswerLedger:
+    def test_ask_records_a_masked_entry_in_the_ledger(self, provider, ecommerce_warehouse):
+        from omniagent.adapters.ledger import DuckDBAnswerLedger
+
+        with DuckDBAnswerLedger() as ledger:
+            client, llm = _client(
+                provider,
+                ecommerce_warehouse,
+                [SemanticExtraction(time_phrase=None, filters=[])],
+                answer_ledger=ledger,
+            )
+
+            ask_body = client.post(
+                "/ask",
+                json={"dataset_id": "ecommerce", "question": "gross revenue for jane@example.com"},
+            ).json()
+
+            entries = ledger.for_thread(ask_body["thread_id"])
+            assert len(entries) == 1
+            assert entries[0].trace_id == ask_body["trace_id"]
+            assert entries[0].matched_metric == "gross_revenue"
+            assert entries[0].executed_sql is not None
+            assert "jane@example.com" not in entries[0].question
+            assert "***@***" in entries[0].question
+
+    def test_resume_appends_a_second_entry_to_the_same_thread(self, provider, ecommerce_warehouse):
+        from omniagent.adapters.ledger import DuckDBAnswerLedger
+
+        with DuckDBAnswerLedger() as ledger:
+            client, llm = _client(
+                provider,
+                ecommerce_warehouse,
+                [SemanticExtraction(time_phrase=None, filters=[])] * 2,
+                answer_ledger=ledger,
+            )
+
+            first = client.post(
+                "/ask", json={"dataset_id": "ecommerce", "question": "order count"}
+            ).json()
+            client.post(
+                "/ask",
+                json={
+                    "dataset_id": "ecommerce",
+                    "question": "gross revenue",
+                    "thread_id": first["thread_id"],
+                },
+            )
+
+            entries = ledger.for_thread(first["thread_id"])
+            assert len(entries) == 2
+            assert entries[0].matched_metric == "order_count"
+            assert entries[1].matched_metric == "gross_revenue"
+
+    def test_no_ledger_configured_means_no_recording_and_no_error(
+        self, provider, ecommerce_warehouse
+    ):
+        client, llm = _client(
+            provider, ecommerce_warehouse, [SemanticExtraction(time_phrase=None, filters=[])]
+        )
+
+        response = client.post(
+            "/ask", json={"dataset_id": "ecommerce", "question": "gross revenue"}
+        )
+
+        assert response.status_code == 200
+
+
+@pytest.mark.integration
+class TestTracingCleanup:
+    """The service pops a completed turn's tracer entry so a long-running
+    process doesn't accumulate one Tracer per thread forever; a paused
+    (interrupt()) turn's entry must survive until /resume completes it."""
+
+    def test_completed_turn_is_popped_from_the_tracers_registry(
+        self, provider, ecommerce_warehouse
+    ):
+        tracers = {}
+        client, llm = _client(
+            provider,
+            ecommerce_warehouse,
+            [SemanticExtraction(time_phrase=None, filters=[])],
+            tracers=tracers,
+        )
+
+        client.post("/ask", json={"dataset_id": "ecommerce", "question": "gross revenue"})
+
+        assert tracers == {}
+
+    def test_paused_turn_survives_until_resume_completes_it(
+        self, provider, ecommerce_warehouse, embedder
+    ):
+        from omniagent.adapters.vectors import DuckDBVSSStore
+        from omniagent.memory.verified_queries import DuckDBVerifiedQueryStore
+
+        tracers = {}
+        with DuckDBVSSStore(dim=embedder.dim) as vstore:
+            verified_query_store = DuckDBVerifiedQueryStore(vstore, embedder)
+            client, llm = _client(
+                provider,
+                ecommerce_warehouse,
+                [
+                    Route(
+                        intent="chat",
+                        target="none",
+                        confidence=0.3,
+                        needs_clarification=True,
+                        rationale="Do you mean order count or gross revenue?",
+                        clarification_options=["Order count", "Gross revenue"],
+                    ),
+                    SemanticExtraction(time_phrase=None, filters=[]),
+                ],
+                use_router=True,
+                verified_query_store=verified_query_store,
+                tracers=tracers,
+            )
+
+            ask_body = client.post(
+                "/ask", json={"dataset_id": "ecommerce", "question": "how are we doing"}
+            ).json()
+            assert ask_body["kind"] == "clarification"
+            assert len(tracers) == 1, "paused turn's tracer must still be present"
+
+            client.post(
+                "/resume", json={"thread_id": ask_body["thread_id"], "message": "gross revenue"}
+            )
+            assert tracers == {}, "resume completed the turn -- now it should be popped"

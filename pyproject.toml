@@ -46,6 +46,7 @@ dev = [
   "hypothesis>=6.82.0",
   "sqlfluff>=3.0.0",
   "types-PyYAML>=6.0.0",
+  "yamllint>=1.35.0",
 ]
 all = [
   "omniagent[duckdb,postgres,metricflow,groq,ollama,vectors,eval,streamlit,service,mcp,dev]"

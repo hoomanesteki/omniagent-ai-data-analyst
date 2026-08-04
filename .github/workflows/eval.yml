@@ -1,0 +1,52 @@
+name: Evaluation
+
+on:
+  schedule:
+    # 06:00 UTC daily -- catches a regression within a day of landing on main.
+    - cron: "0 6 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  eval:
+    name: Run evaluation harness
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.x"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --locked --all-extras --dev
+
+      - name: Generate sample data
+        run: uv run python scripts/generate_samples.py --seed 1337
+
+      - name: Load warehouse
+        run: uv run python scripts/load_warehouse.py
+
+      - name: Run evaluation harness
+        # GROQ_API_KEY is optional: without it, run_eval.py uses a
+        # deterministic stand-in for the one narrow extraction call every
+        # golden question makes (see scripts/run_eval.py's
+        # _RepeatingExtractionLLM), so this still runs and gates on
+        # execution/route/metric-match accuracy and red team refusal
+        # either way -- only the extraction call itself goes unverified
+        # against a real model without the key.
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: uv run python scripts/run_eval.py | tee eval-scorecard.txt
+
+      - name: Upload scorecard
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-scorecard
+          path: eval-scorecard.txt
+          retention-days: 90
