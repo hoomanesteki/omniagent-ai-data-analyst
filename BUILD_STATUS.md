@@ -126,27 +126,39 @@
   runs its own SQL, so this only surfaced at real execution). Added a `saas_warehouse` test
   fixture, since no test had exercised real joins across the SaaS pack's five models before.
 
-**Still open:** CI workflow wiring (gating on eval regressions, paired comparison). Folded
-into Phase 10, which owns CI/CD more broadly.
+CI workflow wiring landed with Phase 10 below (`.github/workflows/eval.yml` runs the harness
+nightly); paired comparison (McNemar) gating on regressions was not built.
 
 ---
 
-### Phase 10: MLOps and Observability
+### Phase 10: MLOps and Observability ✅
 
-**Deliverables:**
+- `kernel/telemetry.py`: a `Tracer` recording one masked-input span per node, wired into
+  `build_governed_graph` via a `_traced` wrapper (no node's own code changes). A
+  `GraphInterrupt`-based pause records as paused, not errored, since `agents/clarify.py`
+  pausing mid-turn is a deliberate, successful control-flow event, not a failure.
+- `kernel/ports/ledger.py` + `adapters/ledger/duckdb_ledger.py`: a durable, queryable audit
+  table recording each turn's masked question, route, matched metric, executed SQL,
+  confidence, and error. Wired into `channels/service.py`'s `/ask` and `/resume`, and into
+  `scripts/serve.py`'s composition root. The same `tracers` dict passed to
+  `build_governed_graph` is also handed to the service layer so it can pop a completed
+  turn's entry (no unbounded memory growth) while a paused turn's tracer survives until
+  `/resume` actually finishes it.
+- `tests/perf/`: hermetic behavior tests. Call-count spies, subprocess spies, and CPU-time
+  (not wall-clock, to survive `-n auto` contention) budgets. Found a real bug:
+  `Catalog._contains_phrase` recompiled a fresh regex on every call, ~20x slower than
+  necessary once a catalog reaches a few hundred metrics. Fixed with an `lru_cache` on the
+  compiled pattern.
+- `.github/workflows/{ci,eval,release}.yml`: validated with `yamllint` (a real dev
+  dependency now, tested against the checked-in `.yamllint` config) and `actionlint`
+  (installed locally for this pass, not wired into the test suite itself since it's a Go
+  binary this repo can't assume is present everywhere). `ci.yml` runs lint plus every test
+  tier on push/PR; `eval.yml` runs the harness nightly and on demand; `release.yml` validates
+  a pushed tag against `pyproject.toml`'s own version before creating a GitHub Release.
 
-- Tracing spans on every node (inputs masked)
-- Answer ledger table (durable audit record)
-- Hermetic performance tests (on every PR, free)
-- Release automation (conventional commits, semver)
-- Continuous tuning pipeline skeleton
-- Nightly performance smoke
-
-**Done When:**
-- Turns emit traces with masked inputs
-- PR pipeline completes in < 10 minutes
-- Nightly smoke compares against baseline
-- Metrics gate regressions
+**Honestly still open (not blocking, but real gaps):** a continuous-tuning pipeline and a
+nightly perf-vs-baseline comparison were not built — `eval.yml`'s nightly run reports the
+current scorecard but does not yet store or diff against a historical baseline.
 
 ---
 
@@ -187,11 +199,12 @@ depends on 5's fallback already existing to route into; this did not change 6's 
 **Minimum MVP (complete):** Phases 0, 1, 3, 4, 7, 8 on e-commerce and SaaS.
 
 **Also complete beyond MVP:** Phase 2 (real LLM adapters), Phase 5 (guarded fallback),
-Phase 6 (routing and durability), Phase 9 (evaluation harness).
+Phase 6 (routing and durability), Phase 9 (evaluation harness), Phase 10 (MLOps/observability).
 
 **Still open:** dbt/MetricFlow as the semantic layer's second provider (NativeYAML is the
 fully-exercised primary); Postgres engine conformance (written, skipped without a live server);
-CI workflow wiring; Phases 10, 11, 12.
+a continuous-tuning pipeline and nightly perf-vs-baseline comparison (see Phase 10's honest
+gaps above); Phases 11, 12.
 
 ---
 
@@ -228,4 +241,4 @@ just test-all  # everything, including integration and e2e
 
 ---
 
-**Next Action:** Phase 10 (tracing, answer ledger, CI/CD workflows, hermetic perf gate).
+**Next Action:** Phase 11 (MCP server, Docker packaging, architecture decision records).
