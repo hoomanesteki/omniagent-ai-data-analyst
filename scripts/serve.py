@@ -23,10 +23,14 @@ from __future__ import annotations
 
 import argparse
 import os
-import sqlite3
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
-from langgraph.checkpoint.sqlite import SqliteSaver
+import aiosqlite
+from fastapi import FastAPI
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from omniagent.adapters.embeddings import FastEmbedProvider
 from omniagent.adapters.engine.duckdb import DuckDBEngine
@@ -80,33 +84,47 @@ _DATASETS = {
 }
 
 
-def _build_checkpointer(checkpoint_path: str | Path) -> SqliteSaver:
+@asynccontextmanager
+async def open_checkpointer(
+    checkpoint_path: str | Path,
+) -> AsyncIterator[BaseCheckpointSaver[str]]:
     """A single SQLite-backed checkpointer shared across every dataset's
     graph (thread_id is globally unique regardless of dataset, so one file
-    is enough). `SqliteSaver` is a synchronous, single-connection saver -
-    fine at this project's scale (a local-first deployment, not a
-    multi-process production cluster); `AsyncSqliteSaver` or a
-    Postgres-backed saver is the natural upgrade path if that changes,
-    matching how the DuckDB engine and Postgres engine already split that
-    same scale boundary elsewhere in this codebase.
+    is enough).
+
+    `AsyncSqliteSaver` wraps an `aiosqlite.Connection`, whose background
+    worker thread must be started and used from the same asyncio event loop
+    for its whole lifetime -- opening it here, ahead of `uvicorn.run()`
+    starting its own loop with a throwaway `asyncio.run()`, hangs the first
+    real request instead of erroring, since the connection's worker thread
+    posts results back onto a loop that already stopped running. This
+    context manager exists so a composition root only ever opens the
+    connection from inside the loop that will actually serve requests
+    (FastAPI's `lifespan`, or the single `asyncio.run()` around an MCP
+    server's own async entrypoint), not before it.
     """
     Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(checkpoint_path), check_same_thread=False)
-    return SqliteSaver(conn)
+    conn = await aiosqlite.connect(str(checkpoint_path))
+    try:
+        yield AsyncSqliteSaver(conn)
+    finally:
+        await conn.close()
 
 
 def build_default_datasets(
     *,
+    checkpointer: BaseCheckpointSaver[str],
     packs_root: str | Path = "packs",
     warehouse_path: str | Path = "data/warehouse/omniagent.duckdb",
-    checkpoint_path: str | Path = "data/warehouse/checkpoints.sqlite",
     verified_queries_path: str | Path = "data/warehouse/verified_queries.duckdb",
     answer_ledger_path: str | Path = "data/warehouse/answer_ledger.duckdb",
     model_id: str = DEFAULT_MODEL_ID,
 ) -> dict[str, DatasetRuntime]:
     """Build every dataset's governed graph against the real Groq API and
     the local DuckDB warehouse. Requires GROQ_API_KEY and a warehouse built
-    by scripts/generate_samples.py + scripts/load_warehouse.py."""
+    by scripts/generate_samples.py + scripts/load_warehouse.py. `checkpointer`
+    is built by the caller (see `open_checkpointer`) since a real one needs
+    an event loop already running."""
     if not os.getenv("GROQ_API_KEY"):
         raise RuntimeError(
             "GROQ_API_KEY is not set. Run scripts/generate_samples.py and "
@@ -123,7 +141,6 @@ def build_default_datasets(
     engine = DuckDBEngine(warehouse_path, read_only=True)
     policy = GuardrailPolicy(gates=_ALL_GATES)
     time_resolver = DefaultTimeResolver()
-    checkpointer = _build_checkpointer(checkpoint_path)
 
     embedder = FastEmbedProvider()
     vector_store = DuckDBVSSStore(verified_queries_path, dim=embedder.dim)
@@ -175,13 +192,20 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run the OmniAgent FastAPI service.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
-    parser.add_argument("--reload", action="store_true")
     args = parser.parse_args()
 
     import uvicorn
 
-    app = create_app(build_default_datasets())
-    uvicorn.run(app, host=args.host, port=args.port, reload=args.reload)
+    datasets: dict[str, DatasetRuntime] = {}
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        async with open_checkpointer("data/warehouse/checkpoints.sqlite") as checkpointer:
+            datasets.update(build_default_datasets(checkpointer=checkpointer))
+            yield
+
+    app = create_app(datasets, lifespan=lifespan)
+    uvicorn.run(app, host=args.host, port=args.port)
 
 
 if __name__ == "__main__":

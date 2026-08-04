@@ -1,0 +1,14 @@
+.git
+.venv
+venv
+data
+tests
+.mypy_cache
+.ruff_cache
+.pytest_cache
+.import_linter_cache
+.deepeval
+__pycache__
+*.pyc
+.coverage
+coverage.xml
