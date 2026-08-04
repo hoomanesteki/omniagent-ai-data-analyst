@@ -223,17 +223,49 @@ only that the full pipeline up to and including a real outbound Groq call works.
 
 ---
 
-### Phase 12: Demo and Pilot Kit
+### Phase 12: Demo and Pilot Kit ✅
 
-**Deliverables:**
-- 90-second demo (raw vs governed, answer card, clarification, trap, MCP reveal, scorecard)
-- Reproducible comparison chart (text-to-SQL vs governed)
-- Pilot runbook
+- `scripts/demo.py`: the 90-second demo, five real acts run end to end with no
+  `GROQ_API_KEY` required (a deterministic `ScriptedLLM`, exact for the questions each
+  act asks, the same pattern `run_eval.py` already established). The trap (same red
+  team SQL, raw vs governed), the answer card (a real breakdown question with a real
+  chart), the clarification (a genuinely ambiguous question pauses via `interrupt()`
+  and resumes), the MCP reveal (the identical `DatasetRuntime` answering through
+  `build_mcp_server` instead of a human), the scorecard (the real evaluation harness,
+  run live).
+- `scripts/compare_governed_vs_raw.py`: the reproducible comparison chart. Runs every
+  `eval/redteam.py` case's exact SQL string twice, once with no gates at all against a
+  disposable per-case copy of the warehouse, once through the real gate stack. Writes a
+  self-contained Vega-Lite HTML chart plus the raw JSON to `reports/`. Real result as of
+  this writing: 4 of 6 cases execute with zero gates; the other 2 fail only because of a
+  DuckDB dialect quirk (legacy `SELECT INTO` syntax, `UPDATE` inside a CTE), not because
+  of any actual protection; the gate stack refuses all 6 regardless. An earlier version
+  of this script reused one warehouse copy across all 6 cases and reported a false
+  "protected" result for a later case whose target table an earlier case had already
+  dropped; fixed by giving every case its own fresh copy.
+- `docs/PILOT_RUNBOOK.md`: pre-call checklist, a beat-by-beat guide to the demo's five
+  acts, questions worth asking a prospect live, how to read the scorecard's confidence
+  intervals honestly, what to do if a gate refuses something unexpected, and what a
+  successful pilot actually looks like.
+- Real `README.md`: leads with the actual scorecard (147 golden items, 100% on every
+  metric, generated fresh from real execution, never hand-assembled), the governed-vs-raw
+  comparison's real numbers, and the architecture diagram, before anything else.
+- `_quarto.yml` + `index.qmd`: a Quarto documentation website rendering `README.md`,
+  `BUILD_STATUS.md`, every ADR, and the pilot runbook in place (via `{{< include >}}`,
+  not duplicated copies), with a working navbar and correctly cross-resolved internal
+  links. `just docs` renders it to `_site/`; `just docs-preview` serves it with live reload.
+- Found and fixed a real bug while building the comparison script (see above): the
+  case-ordering issue is exactly the kind of thing this project's own validate-then-fix
+  discipline exists to catch, caught here by actually reading the "governed vs raw"
+  output instead of trusting that a passing script meant a correct result.
+- Added `DuckDBEngine.database_path`, a small public accessor needed by the comparison
+  script's tests to get at the underlying warehouse file without reaching into a
+  private attribute.
 
-**Done When:**
-- Demo runs end-to-end
-- Scorecard generated from script (not hand-assembled)
-- README leads with numbers
+**Honestly still open:** the demo's narration is read from stdout by a human presenter,
+not an actual recorded video; there is no automated visual regression test on the
+rendered Quarto site's appearance, only on its structural correctness (links resolve,
+navbar renders, no duplicate headings).
 
 ---
 
@@ -245,12 +277,17 @@ depends on 5's fallback already existing to route into; this did not change 6's 
 **Minimum MVP (complete):** Phases 0, 1, 3, 4, 7, 8 on e-commerce and SaaS.
 
 **Also complete beyond MVP:** Phase 2 (real LLM adapters), Phase 5 (guarded fallback),
-Phase 6 (routing and durability), Phase 9 (evaluation harness), Phase 10 (MLOps/observability).
+Phase 6 (routing and durability), Phase 9 (evaluation harness), Phase 10 (MLOps/observability),
+Phase 11 (MCP and packaging), Phase 12 (demo and pilot kit).
 
-**Still open:** dbt/MetricFlow as the semantic layer's second provider (NativeYAML is the
-fully-exercised primary); Postgres engine conformance (written, skipped without a live server);
-a continuous-tuning pipeline and nightly perf-vs-baseline comparison (see Phase 10's honest
-gaps above); Phases 11, 12.
+**All 13 phases of the roadmap are complete.** Still open, honestly, not because a phase
+was skipped: dbt/MetricFlow as the semantic layer's second provider (NativeYAML is the
+fully-exercised primary); Postgres engine conformance (written, skipped without a live
+server); a continuous-tuning pipeline and nightly perf-vs-baseline comparison (see Phase
+10's honest gaps); an actual MCP client connecting over the wire, as opposed to direct
+in-process `call_tool` (see Phase 11's honest gaps); a real `GROQ_API_KEY` was never
+exercised in this sandbox, so no live model call's actual output is verified anywhere in
+this build, only the deterministic scaffolding around where one would go.
 
 ---
 
@@ -283,8 +320,16 @@ git clone ... && cd omniagent-ai-data-analyst
 just install   # uv sync --locked --all-extras --dev
 just ci        # lint + fast tests (unit, contract, component)
 just test-all  # everything, including integration and e2e
+
+python scripts/generate_samples.py
+python scripts/load_warehouse.py
+just eval      # the real scorecard
+just compare   # the governed-vs-raw comparison chart
+just demo      # the 90-second walkthrough, five acts, no API key needed
+just docs      # render the Quarto docs site to _site/
 ```
 
 ---
 
-**Next Action:** Phase 11 (MCP server, Docker packaging, architecture decision records).
+**Next Action:** none outstanding on the 13-phase roadmap. See "Still open" above for the
+honestly-documented gaps this build did not close, and README.md for how to run everything.

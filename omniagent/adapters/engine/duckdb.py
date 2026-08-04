@@ -48,6 +48,14 @@ class DuckDBEngine:
         self._read_only = read_only
         self._conn = duckdb.connect(self._database, read_only=read_only)
 
+    @property
+    def database_path(self) -> str:
+        """The path (or ``":memory:"``) this engine was opened against, for
+        the rare caller that genuinely needs the underlying file rather than
+        a query result -- e.g. a tool that copies the warehouse elsewhere
+        before running something the gate stack itself would refuse."""
+        return self._database
+
     def capabilities(self) -> EngineCapabilities:
         return EngineCapabilities(
             dialect=self.dialect,
