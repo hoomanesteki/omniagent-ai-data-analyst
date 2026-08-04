@@ -1,0 +1,31 @@
+project:
+  type: website
+  output-dir: _site
+  render:
+    - index.qmd
+    - BUILD_STATUS.md
+    - docs/PILOT_RUNBOOK.md
+    - docs/adr/README.md
+    - docs/adr/*.md
+
+website:
+  title: "OmniAgent"
+  description: "A governed answer engine for tabular data."
+  navbar:
+    left:
+      - href: index.qmd
+        text: Home
+      - href: BUILD_STATUS.md
+        text: Build Status
+      - href: docs/adr/README.md
+        text: Architecture Decisions
+      - href: docs/PILOT_RUNBOOK.md
+        text: Pilot Runbook
+
+format:
+  html:
+    theme: cosmo
+    toc: true
+    code-copy: true
+    grid:
+      body-width: 900px

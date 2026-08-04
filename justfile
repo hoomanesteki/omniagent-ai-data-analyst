@@ -23,6 +23,12 @@ ci: lint test
 eval:
     uv run python scripts/run_eval.py
 
+demo:
+    uv run python scripts/demo.py
+
+compare:
+    uv run python scripts/compare_governed_vs_raw.py
+
 serve:
     uv run python scripts/serve.py
 
@@ -35,6 +41,12 @@ docker-up:
 docker-down:
     docker compose down --volumes
 
+docs:
+    quarto render
+
+docs-preview:
+    quarto preview
+
 help:
     @echo "OmniAgent 2.0 build tasks"
     @echo "  make install    - set up environment"
@@ -44,7 +56,11 @@ help:
     @echo "  make coverage   - run tests with coverage report"
     @echo "  make ci         - run lint and fast tests (what CI runs)"
     @echo "  make eval       - run the evaluation harness, print the scorecard"
+    @echo "  make demo       - run the 90-second demo end to end"
+    @echo "  make compare    - regenerate the governed-vs-raw comparison chart"
     @echo "  make serve      - run the REST API against real adapters"
     @echo "  make serve-mcp  - run the MCP server against real adapters"
     @echo "  make docker-up  - build and run the full stack via docker compose"
     @echo "  make docker-down - stop the docker compose stack and remove volumes"
+    @echo "  make docs       - render the Quarto docs site to _site/"
+    @echo "  make docs-preview - live-reloading local preview of the docs site"
