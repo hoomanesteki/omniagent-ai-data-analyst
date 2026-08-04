@@ -80,11 +80,11 @@
 
 ### Phase 6: Routing & Durability ✅
 
-- `agents/router.py` — one narrow LLM call behind master's deterministic catalog miss,
-  deciding a genuine out-of-scope data question (→ the guarded SQL fallback) from a
-  non-data intent or a question that needs clarification first. Governed (catalog-matched)
+- `agents/router.py`: one narrow LLM call behind master's deterministic catalog miss,
+  deciding a genuine out-of-scope data question (routed to the guarded SQL fallback) from
+  a non-data intent or a question that needs clarification first. Governed (catalog-matched)
   questions never reach it at all.
-- `agents/clarify.py` — pauses graph execution via LangGraph's `interrupt()` instead of
+- `agents/clarify.py`: pauses graph execution via LangGraph's `interrupt()` instead of
   ending the turn; a caller resumes with `Command(resume=answer)`, re-entering the same
   deterministic dispatch (`dispatch_match`, extracted from `master_node` so both share it)
   an original question would have gone through, including looping back through `clarify`
@@ -103,23 +103,31 @@
 
 ---
 
-## Remaining Phases
+### Phase 9: Evaluation ✅
 
-### Phase 9: Evaluation
+- `omniagent/eval/goldgen.py`: backwards generation. For every metric the catalog knows
+  (and one valid breakdown dimension per metric), compiles and executes the real query
+  against the real warehouse for ground truth, then attaches several template phrasings.
+  Nothing checked in as static data; regenerated fresh from the pack YAML and warehouse
+  every run, so it can never drift out of sync with either.
+- `omniagent/eval/scorers.py`: execution accuracy (row-order-independent, float-tolerant),
+  a generic categorical accuracy (route/metric-match), schema-link recall, and a percentile
+  bootstrap confidence interval with a fixed default seed.
+- `omniagent/eval/redteam.py`: deterministic destructive/exfiltration cases, each scripting
+  the LLM to attempt its induced SQL on every retry attempt, proving refusal is the gate
+  stack's doing, not the model's.
+- `scripts/run_eval.py` (composition root, same placement reasoning as `scripts/serve.py`) +
+  `just eval`. Run against the real warehouse: 147 golden items across both packs, 6 red
+  team cases, 100% on execution/route/metric-match accuracy and red team refusal.
+- Found and fixed two real bugs this exercised for the first time: `execution_accuracy`
+  crashing comparing `None` to a float when sorting rows for comparison, and a join-path
+  bug in `native_yaml.py` where a two-hop join spliced in an unrelated model's join type
+  and condition instead of the one that actually applied to that edge (`compile()` never
+  runs its own SQL, so this only surfaced at real execution). Added a `saas_warehouse` test
+  fixture, since no test had exercised real joins across the SaaS pack's five models before.
 
-**Deliverables:**
-- Semi-automatic golden set generator
-- Golden sets for both packs (~60 items each)
-- Execution accuracy scorer (normalized comparison)
-- Component scorers (route acc, metric-match, schema-link recall, etc.)
-- Red team suite (deterministic subset in CI)
-- eval.run_eval.py and CI workflow
-
-**Done When:**
-- `make eval` prints full scorecard
-- CI fails on regressions and all red team failures
-- Bootstrap CIs on all metrics
-- Paired comparison gates (McNemar)
+**Still open:** CI workflow wiring (gating on eval regressions, paired comparison). Folded
+into Phase 10, which owns CI/CD more broadly.
 
 ---
 
@@ -179,11 +187,11 @@ depends on 5's fallback already existing to route into; this did not change 6's 
 **Minimum MVP (complete):** Phases 0, 1, 3, 4, 7, 8 on e-commerce and SaaS.
 
 **Also complete beyond MVP:** Phase 2 (real LLM adapters), Phase 5 (guarded fallback),
-Phase 6 (routing and durability).
+Phase 6 (routing and durability), Phase 9 (evaluation harness).
 
 **Still open:** dbt/MetricFlow as the semantic layer's second provider (NativeYAML is the
 fully-exercised primary); Postgres engine conformance (written, skipped without a live server);
-Phases 9, 10, 11, 12.
+CI workflow wiring; Phases 10, 11, 12.
 
 ---
 
@@ -220,4 +228,4 @@ just test-all  # everything, including integration and e2e
 
 ---
 
-**Next Action:** Phase 9 (evaluation harness: golden sets, scorers, red team, `run_eval.py`).
+**Next Action:** Phase 10 (tracing, answer ledger, CI/CD workflows, hermetic perf gate).
