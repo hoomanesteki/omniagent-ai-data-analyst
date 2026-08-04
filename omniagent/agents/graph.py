@@ -11,7 +11,7 @@ real result to describe. The SQL fallback (Phase 5) and model-based router
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from langgraph.graph import END, START, StateGraph
@@ -67,7 +67,7 @@ def build_governed_graph(
             model_id=model_id,
             time_resolver=time_resolver,
             calendar=calendar or CalendarSpec(),
-            now_fn=now_fn or datetime.utcnow,
+            now_fn=now_fn or (lambda: datetime.now(UTC)),
         ),
     )
     graph.add_node(  # type: ignore[call-overload]

@@ -1,6 +1,6 @@
 """Pydantic models for typed contracts between agents."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -106,6 +106,11 @@ class AnswerEnvelope(BaseModel):
     narration: str | None = None
     values: list[MetricValue] = []
     chart: ChartSpec | None = None
+    # The chart's own data, inline. table_ref is for a future ResultStore
+    # (Phase 5) that lets a client re-fetch a large result by reference;
+    # until that exists, a chart needs its rows delivered with the answer
+    # to be renderable at all.
+    rows: list[dict[str, Any]] | None = None
     table_ref: str | None = None
     executed_sql: str | None = None
     metric_request: dict[str, Any] | None = None
@@ -114,7 +119,8 @@ class AnswerEnvelope(BaseModel):
     suggestions: list[str] = []
     clarification: dict[str, Any] | None = None
     trace_id: str = ""
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    thread_id: str = ""
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class Clarification(BaseModel):

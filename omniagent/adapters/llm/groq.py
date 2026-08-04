@@ -6,6 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from omniagent.adapters.llm.prompting import build_prompt
 from omniagent.kernel.ports.llm import LLMProvider, ModelCapabilities
 
 
@@ -98,8 +99,22 @@ class GroqProvider(LLMProvider):
         raise NotImplementedError("Use langchain-groq ChatGroq instead")
 
     def structured(self, model_id: str, req: dict[str, Any], schema: type[BaseModel]) -> BaseModel:
-        """Structured output (not implemented in scaffold)."""
-        raise NotImplementedError("Use langchain-groq with .with_structured_output()")
+        """Structured extraction call via langchain-groq's JSON-schema mode.
+
+        `req` is a small task-shaped dict (see `_build_prompt`) rather than a
+        raw prompt string, so callers stay decoupled from any particular
+        provider's prompting conventions.
+        """
+        from langchain_groq import ChatGroq
+
+        chat = ChatGroq(model=model_id, api_key=self.api_key, temperature=0)
+        structured_chat = chat.with_structured_output(schema)
+        result = structured_chat.invoke(build_prompt(req))
+        if not isinstance(result, schema):
+            # with_structured_output can return a dict depending on method;
+            # normalize defensively rather than trust the return type alone.
+            result = schema.model_validate(result)
+        return result
 
     def stream(self, model_id: str, req: dict[str, Any]) -> Iterator[str]:
         """Token stream (not implemented in scaffold)."""

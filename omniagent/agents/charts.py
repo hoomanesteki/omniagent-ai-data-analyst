@@ -27,6 +27,20 @@ from omniagent.kernel.catalog import Catalog
 from omniagent.kernel.models import ChartSpec
 from omniagent.kernel.models import DisplayFormat as ContractDisplayFormat
 
+# Validated categorical palette (light mode), fixed hue order — CVD-safe on
+# every adjacent pair. Never cycle or reassign per-render; the order itself
+# is the safety mechanism. See the dataviz skill's references/palette.md.
+CATEGORICAL_PALETTE = [
+    "#2a78d6",  # blue
+    "#eb6834",  # orange
+    "#1baf7a",  # aqua
+    "#eda100",  # yellow
+    "#e87ba4",  # magenta
+    "#008300",  # green
+    "#4a3aa7",  # violet
+    "#e34948",  # red
+]
+
 
 def _to_contract_format(fmt: catalog_module.DisplayFormat) -> ContractDisplayFormat:
     """catalog.DisplayFormat is a lightweight internal value type (frozen,
@@ -64,37 +78,35 @@ def choose_chart(
         dim_field = _result_column_for_dimension(dim_name)
         metric_field = metrics[0]
 
+        y_title = _metric_label(catalog, metric_field)
+
         if dim_info is not None and dim_info.type == "time":
             return ChartSpec(
                 mark="line",
                 encoding={
                     "x": {"field": dim_field, "type": "temporal", "title": dim_info.label},
-                    "y": {
-                        "field": metric_field,
-                        "type": "quantitative",
-                        "title": _metric_label(catalog, metric_field),
-                    },
+                    "y": {"field": metric_field, "type": "quantitative", "title": y_title},
+                    "tooltip": [
+                        {"field": dim_field, "type": "temporal", "title": dim_info.label},
+                        {"field": metric_field, "type": "quantitative", "title": y_title},
+                    ],
                 },
-                title=_metric_label(catalog, metric_field),
+                title=y_title,
                 formats=formats,
             )
 
+        x_title = dim_info.label if dim_info else dim_field
         return ChartSpec(
             mark="bar",
             encoding={
-                "x": {
-                    "field": dim_field,
-                    "type": "nominal",
-                    "title": dim_info.label if dim_info else dim_field,
-                    "sort": "-y",
-                },
-                "y": {
-                    "field": metric_field,
-                    "type": "quantitative",
-                    "title": _metric_label(catalog, metric_field),
-                },
+                "x": {"field": dim_field, "type": "nominal", "title": x_title, "sort": "-y"},
+                "y": {"field": metric_field, "type": "quantitative", "title": y_title},
+                "tooltip": [
+                    {"field": dim_field, "type": "nominal", "title": x_title},
+                    {"field": metric_field, "type": "quantitative", "title": y_title},
+                ],
             },
-            title=_metric_label(catalog, metric_field),
+            title=y_title,
             formats=formats,
         )
 
@@ -103,27 +115,31 @@ def choose_chart(
         x_info = catalog.dimensions.get(x_dim)
         series_info = catalog.dimensions.get(series_dim)
         metric_field = metrics[0]
+        x_field = _result_column_for_dimension(x_dim)
+        series_field = _result_column_for_dimension(series_dim)
+        x_title = x_info.label if x_info else x_dim
+        series_title = series_info.label if series_info else series_dim
+        y_title = _metric_label(catalog, metric_field)
 
         return ChartSpec(
             mark="bar",
             encoding={
-                "x": {
-                    "field": _result_column_for_dimension(x_dim),
-                    "type": "nominal",
-                    "title": x_info.label if x_info else x_dim,
-                },
-                "y": {
-                    "field": metric_field,
-                    "type": "quantitative",
-                    "title": _metric_label(catalog, metric_field),
-                },
+                "x": {"field": x_field, "type": "nominal", "title": x_title},
+                "y": {"field": metric_field, "type": "quantitative", "title": y_title},
                 "color": {
-                    "field": _result_column_for_dimension(series_dim),
+                    "field": series_field,
                     "type": "nominal",
-                    "title": series_info.label if series_info else series_dim,
+                    "title": series_title,
+                    # Fixed hue order, never cycled — see CATEGORICAL_PALETTE.
+                    "scale": {"range": CATEGORICAL_PALETTE},
                 },
+                "tooltip": [
+                    {"field": x_field, "type": "nominal", "title": x_title},
+                    {"field": series_field, "type": "nominal", "title": series_title},
+                    {"field": metric_field, "type": "quantitative", "title": y_title},
+                ],
             },
-            title=_metric_label(catalog, metric_field),
+            title=y_title,
             formats=formats,
         )
 

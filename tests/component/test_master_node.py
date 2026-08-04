@@ -64,7 +64,7 @@ class TestMasterNodeNoMatch:
         assert cmd.goto == END
         assert cmd.update["needs_human"] is True
         assert cmd.update["route"] == "clarify"
-        assert set(cmd.update["clarification"]["options"]) == {"net_revenue", "gross_revenue"}
+        assert set(cmd.update["clarification"]["options"]) == {"Net revenue", "Gross revenue"}
 
     def test_empty_question_ends_with_clarification(self, catalog):
         node = make_master_node(catalog)
@@ -76,17 +76,25 @@ class TestMasterNodeNoMatch:
 
 class TestMasterNodeAmbiguous:
     def test_ambiguous_match_ends_with_options(self):
+        """Two distinct metrics whose synonyms tie on phrase length for the
+        same question — a realistic ambiguity, unlike two metrics sharing an
+        identical label (which the real packs never do, and which no amount
+        of clarification text could actually disambiguate anyway)."""
         tied_catalog = Catalog(
             dataset_id="test",
             metrics={
-                "metric_a": MetricInfo(name="metric_a", label="Widget count"),
-                "metric_b": MetricInfo(name="metric_b", label="Widget count"),
+                "metric_a": MetricInfo(
+                    name="metric_a", label="Order count", synonyms=("order total",)
+                ),
+                "metric_b": MetricInfo(
+                    name="metric_b", label="Order value", synonyms=("order total",)
+                ),
             },
         )
         node = make_master_node(tied_catalog)
-        cmd = asyncio.run(node(_state("widget count")))
+        cmd = asyncio.run(node(_state("order total")))
 
         assert cmd.goto == END
         assert cmd.update["needs_human"] is True
-        assert set(cmd.update["clarification"]["options"]) == {"metric_a", "metric_b"}
+        assert set(cmd.update["clarification"]["options"]) == {"Order count", "Order value"}
         assert cmd.update["clarification"]["question"] == "Which metric did you mean?"
