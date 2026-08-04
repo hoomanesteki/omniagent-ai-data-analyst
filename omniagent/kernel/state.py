@@ -30,7 +30,14 @@ class OmniState:
     matched_metric: str | None = None
 
     # SQL fallback path
-    sql_candidates: Annotated[list[dict[str, Any]], add] = field(default_factory=list)
+    #
+    # Not an `add`-reducer channel like `messages`: a node here always
+    # returns the full accumulated value for this turn (same convention as
+    # `llm_calls`/`model_calls_by_node` below), not a delta to append. With
+    # a real checkpointer persisting state across separate `/ask` calls on
+    # the same thread, an `add` reducer would keep concatenating a prior
+    # turn's candidates onto every later turn's, unrelated question or not.
+    sql_candidates: list[dict[str, Any]] = field(default_factory=list)
     executed_sql: str | None = None
 
     # Results and evidence
@@ -48,7 +55,10 @@ class OmniState:
     chart_spec: dict[str, Any] | None = None
     suggestions: Annotated[list[dict[str, Any]], add] = field(default_factory=list)
     confidence: float | None = None
-    assumptions: Annotated[list[str], add] = field(default_factory=list)
+    # Same "full value, not a delta" convention as `sql_candidates` above.
+    # See that field's comment for why an `add` reducer would be wrong here
+    # once a real checkpointer persists state across separate `/ask` calls.
+    assumptions: list[str] = field(default_factory=list)
 
     # Escalation and budgeting
     tier_bump: int = 0

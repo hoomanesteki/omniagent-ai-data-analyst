@@ -95,7 +95,6 @@ def make_fast_path_node(
         except Unsafe:
             return Command(goto=fallback_route, update={})
 
-        new_assumptions = working.assumptions[len(state.assumptions) :]
         return Command(
             goto="narrator",
             update={
@@ -103,7 +102,7 @@ def make_fast_path_node(
                 "result_set": working.result_set,
                 "result_meta": working.result_meta,
                 "guarded": working.guarded,
-                "assumptions": new_assumptions,
+                "assumptions": working.assumptions,
                 "evidence": {
                     "tables": [],
                     "schema_version": scope.schema_version,

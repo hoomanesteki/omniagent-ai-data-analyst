@@ -104,8 +104,6 @@ def make_executor_node(
                 },
             )
 
-        new_assumptions = working.assumptions[len(state.assumptions) :]
-
         return Command(
             goto="narrator",
             update={
@@ -113,7 +111,7 @@ def make_executor_node(
                 "result_set": working.result_set,
                 "result_meta": working.result_meta,
                 "guarded": working.guarded,
-                "assumptions": new_assumptions,
+                "assumptions": working.assumptions,
                 "evidence": {
                     "tables": compiled.provenance.get("tables", []),
                     "schema_version": compiled.provenance.get("schema_version"),
