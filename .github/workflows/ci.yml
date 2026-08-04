@@ -38,7 +38,7 @@ jobs:
         run: uv run mypy omniagent/kernel omniagent/agents omniagent/channels omniagent/adapters omniagent/memory omniagent/eval
 
       - name: import-linter
-        run: uv run import-linter lint
+        run: uv run lint-imports
 
   test:
     name: Fast tests (unit, contract, component, perf)

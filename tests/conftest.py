@@ -1,9 +1,21 @@
 """Pytest configuration and shared fixtures for omniagent tests."""
 
+import os
+
 import duckdb
 import pytest
 
 from omniagent.adapters.engine.duckdb import DuckDBEngine
+
+# Must run before any fixture constructs a FastEmbedProvider (the verified-query
+# fast path's embedder). huggingface_hub's Xet-accelerated download backend calls
+# a now-deprecated hf_xet function on every first-time model download; this
+# project's own filterwarnings turns that third-party DeprecationWarning into a
+# hard error, which only ever fires on a genuinely cold cache (a fresh clone, or
+# a CI runner, never a machine that already has the model cached from a previous
+# run). Disabling Xet falls back to the plain HTTP download path, which does not
+# hit the deprecated call.
+os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 
 
 def pytest_configure(config):
