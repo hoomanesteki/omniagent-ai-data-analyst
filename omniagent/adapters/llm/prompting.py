@@ -21,6 +21,15 @@ _TASK_INSTRUCTIONS = {
         "leave time_phrase null. For each explicit filter, name one of the "
         "known dimensions and the value the question specifies."
     ),
+    "generate_sql": (
+        "Write a single read-only SELECT statement that answers the "
+        "question, using only the tables and columns listed in `schema`. "
+        "Never use DROP, CREATE, ALTER, DELETE, INSERT, UPDATE, TRUNCATE, "
+        "EXEC, or SELECT INTO, and never emit more than one statement. If "
+        "`prior_error` is present, it explains why your last attempt "
+        "(`prior_attempt_sql`) was rejected — fix that specific problem "
+        "rather than starting over from scratch."
+    ),
 }
 
 

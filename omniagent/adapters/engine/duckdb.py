@@ -23,6 +23,12 @@ _MISSING_COLUMN = re.compile(r'referenced column "([^"]+)" not found', re.IGNORE
 _BINDER_COLUMN = re.compile(r"column \"?([\w.]+)\"? not found", re.IGNORECASE)
 
 
+def _prefix_like_pattern(dataset_id: str) -> str:
+    """`dataset_id` as a LIKE prefix pattern, with its own `%`/`_`/`\\` escaped."""
+    escaped = dataset_id.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"{escaped}\\_%"
+
+
 class DuckDBEngine:
     """Read-only DuckDB adapter.
 
@@ -90,17 +96,24 @@ class DuckDBEngine:
         )
 
     def schema_snapshot(self, dataset_id: str) -> dict[str, Any]:
-        """Table and column metadata for schema linking."""
+        """Table and column metadata for schema linking.
+
+        Every pack's tables live together in one flat warehouse (see
+        scripts/load_warehouse.py), disambiguated by a `{dataset_id}_` table
+        name prefix rather than a DuckDB schema per dataset — `ecommerce_orders`,
+        `saas_accounts`, and so on, all in the default `main` schema. So the
+        dataset boundary here is a name-prefix filter, not `table_schema`.
+        """
         cursor = self._conn.cursor()
         try:
             rows = cursor.execute(
                 """
                 SELECT table_name, column_name, data_type
                 FROM information_schema.columns
-                WHERE table_schema = ?
+                WHERE table_name LIKE ? ESCAPE '\\'
                 ORDER BY table_name, ordinal_position
                 """,
-                [dataset_id],
+                [_prefix_like_pattern(dataset_id)],
             ).fetchall()
         finally:
             cursor.close()

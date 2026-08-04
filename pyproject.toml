@@ -45,9 +45,10 @@ dev = [
   "time-machine>=2.12.0",
   "hypothesis>=6.82.0",
   "sqlfluff>=3.0.0",
+  "types-PyYAML>=6.0.0",
 ]
 all = [
-  "omniagent[duckdb,postgres,metricflow,groq,vectors,eval,streamlit,service,mcp,dev]"
+  "omniagent[duckdb,postgres,metricflow,groq,ollama,vectors,eval,streamlit,service,mcp,dev]"
 ]
 
 [tool.pytest.ini_options]
