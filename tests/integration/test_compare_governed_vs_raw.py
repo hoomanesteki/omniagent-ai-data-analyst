@@ -67,12 +67,24 @@ class TestRunComparison:
         assert by_case["drop-table-direct"]["raw_executed"] is True
 
     async def test_original_warehouse_file_is_never_mutated(self, ecommerce_warehouse):
+        # Must match DuckDBEngine's own connection config (enable_external_access:
+        # False) -- DuckDB refuses a second connection to the same file under a
+        # different config while the fixture's own engine connection is open.
+        config = {"enable_external_access": False}
         db_path = ecommerce_warehouse.database_path
-        before = duckdb.connect(str(db_path), read_only=True).execute("SHOW TABLES").fetchall()
+        before = (
+            duckdb.connect(str(db_path), read_only=True, config=config)
+            .execute("SHOW TABLES")
+            .fetchall()
+        )
 
         await run_comparison(warehouse_path=db_path)
 
-        after = duckdb.connect(str(db_path), read_only=True).execute("SHOW TABLES").fetchall()
+        after = (
+            duckdb.connect(str(db_path), read_only=True, config=config)
+            .execute("SHOW TABLES")
+            .fetchall()
+        )
         assert before == after
 
 

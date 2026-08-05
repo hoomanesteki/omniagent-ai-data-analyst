@@ -74,13 +74,20 @@ class GuardrailPolicy:
                 state.guarded[gate_name] = {"unsafe": True, "reason": e.reason}
                 violations.append(e)
             except Exception as e:
-                # Capture exception details but continue running other gates
+                # A safety gate that crashes is not a gate that passed: record
+                # the failure for the audit trail and treat it as a violation
+                # so the caller fails closed, exactly as a real Unsafe would.
+                # Continuing to run the other gates (not re-raising here) is
+                # only for full audit coverage; this is still added to
+                # `violations` so apply() raises Unsafe once the loop ends.
                 if state.guarded is None:
                     state.guarded = {}
                 state.guarded[gate_name] = {
+                    "unsafe": True,
                     "error": str(e),
                     "exception_type": type(e).__name__,
                 }
+                violations.append(Unsafe(reason=f"{gate_name} crashed: {type(e).__name__}: {e}"))
 
         if violations:
             raise Unsafe(reason="; ".join(v.reason for v in violations))

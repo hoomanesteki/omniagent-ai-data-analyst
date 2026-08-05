@@ -13,7 +13,9 @@ from omniagent.adapters.vectors import DuckDBVSSStore
 from omniagent.kernel.ports.identity import Scope
 from omniagent.memory.value_dictionary import DuckDBValueDictionary
 
-pytestmark = pytest.mark.contract
+# See test_verified_queries.py's pytestmark comment: shared xdist_group so
+# concurrent workers don't race to load the real embedding model at once.
+pytestmark = [pytest.mark.contract, pytest.mark.xdist_group(name="fastembed")]
 
 
 @pytest.fixture(scope="module")

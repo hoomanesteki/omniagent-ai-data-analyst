@@ -35,6 +35,15 @@ class DuckDBEngine:
     The connection is opened with ``read_only=True`` so the engine itself, not
     only the SQL parser, refuses writes. Each ``execute`` takes a fresh cursor
     so concurrent requests cannot observe one another's partial result sets.
+
+    ``read_only=True`` alone only protects the database *file* -- DuckDB's
+    ``COPY``, ``read_csv``/``read_parquet``, ``INSTALL``/``LOAD``, and
+    ``ATTACH`` all still work over a read-only connection, since none of them
+    write to this database. ``enable_external_access=False`` closes that gap
+    at the engine level: no filesystem or network access at all, regardless
+    of what SQL text reaches this connection. This is defense in depth
+    alongside `kernel/gates/sql_allowlist.py`'s own checks for the same
+    operations, not a replacement for them.
     """
 
     dialect = "duckdb"
@@ -46,7 +55,9 @@ class DuckDBEngine:
         if read_only is None:
             read_only = self._database != ":memory:"
         self._read_only = read_only
-        self._conn = duckdb.connect(self._database, read_only=read_only)
+        self._conn = duckdb.connect(
+            self._database, read_only=read_only, config={"enable_external_access": False}
+        )
 
     @property
     def database_path(self) -> str:

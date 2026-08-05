@@ -10,10 +10,10 @@ lint:
     uv run lint-imports
 
 test:
-    uv run pytest tests/unit tests/contract tests/component tests/perf -n auto --tb=short
+    uv run pytest tests/unit tests/contract tests/component tests/perf -n auto --dist=loadgroup --tb=short
 
 test-all:
-    uv run pytest tests -n auto --tb=short
+    uv run pytest tests -n auto --dist=loadgroup --tb=short
 
 coverage:
     uv run pytest tests/unit tests/contract tests/component tests/perf --cov=omniagent --cov-report=term-missing --cov-report=xml

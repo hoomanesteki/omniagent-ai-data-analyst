@@ -82,17 +82,18 @@ async def row_cap_gate(state: OmniState, *, config: dict[str, Any]) -> OmniState
         reason = f"Result row count {row_count} exceeds max_rows limit {max_rows}"
         raise Unsafe(reason=reason)
 
-    # Row count is within limits; record observation
+    # Row count is within limits; record observation. No assumption is
+    # recorded here -- by this point `truncated` is known False, so the
+    # result set is genuinely complete, and a generic "limited to N rows
+    # maximum" disclaimer would be noise on every single answer rather than
+    # a real caveat about this one. `truncated` above is where a real cap
+    # actually applied gets recorded as an assumption via the Unsafe path's
+    # own reason.
     state.guarded["row_cap_gate"] = {
         "status": "within_limit",
         "max_rows": max_rows,
         "row_count": row_count,
-        "cap_applied": True,
+        "cap_applied": False,
     }
-
-    # Add assumption to state if not already present
-    assumption_text = f"Result set limited to {max_rows} rows maximum"
-    if assumption_text not in state.assumptions:
-        state.assumptions.append(assumption_text)
 
     return state

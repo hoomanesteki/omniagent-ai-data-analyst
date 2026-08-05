@@ -87,11 +87,17 @@ def make_semantic_agent_node(
                     f"Ignored filter on unrecognized dimension {extracted.dimension!r}."
                 )
 
+        group_by = catalog.match_dimensions(question)
         query = SemanticQuery(
             metrics=(metric_name,),
-            group_by=catalog.match_dimensions(question),
+            group_by=group_by,
             filters=tuple(filters),
             time_range=time_range,
+            # A breakdown needs its rows ordered by the metric, descending,
+            # for the narrator's "X leads at Y" claim to actually describe
+            # the real top group rather than whichever 100 rows the engine
+            # happened to return first.
+            order_by=(f"-{metric_name}",) if group_by else (),
             limit=100,
             assumptions=tuple(assumptions),
         )

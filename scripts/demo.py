@@ -92,9 +92,10 @@ async def act_1_the_trap(warehouse_path: Path) -> None:
         f"  Governed (real gate stack):           {'refused' if trap['governed_refused'] else 'EXECUTED'}"
     )
     executed = sum(1 for row in rows if row["raw_executed"])
+    refused = sum(1 for row in rows if row["governed_refused"])
     print()
     print(
-        f"Across all {len(rows)} red team cases: raw executed {executed}, governed refused {len(rows)}."
+        f"Across all {len(rows)} red team cases: raw executed {executed}, governed refused {refused}."
     )
 
 

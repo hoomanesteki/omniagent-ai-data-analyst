@@ -49,7 +49,7 @@ jobs:
           uv run ruff format --check omniagent tests scripts
           uv run mypy omniagent/kernel omniagent/agents omniagent/channels omniagent/adapters omniagent/memory omniagent/eval
           uv run lint-imports
-          uv run pytest tests/unit tests/contract tests/component tests/perf -n auto --tb=short --no-cov
+          uv run pytest tests/unit tests/contract tests/component tests/perf -n auto --dist=loadgroup --tb=short --no-cov
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

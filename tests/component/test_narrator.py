@@ -26,6 +26,7 @@ def catalog():
 
 
 def _state_with_result(query: SemanticQuery, result_set: list[dict], **kwargs) -> OmniState:
+    kwargs.setdefault("route", "semantic_agent")
     return OmniState(
         thread_id="t1",
         dataset_id="ecommerce",
@@ -99,28 +100,52 @@ class TestNarrateEdgeCases:
 
 class TestComputeConfidence:
     def test_full_match_score_no_assumptions_full_confidence(self):
-        state = OmniState(thread_id="t1", metric_match_score=1.0)
+        state = OmniState(thread_id="t1", route="semantic_agent", metric_match_score=1.0)
         assert compute_confidence(state) == 1.0
 
     def test_assumptions_reduce_confidence(self):
-        state = OmniState(thread_id="t1", metric_match_score=1.0, assumptions=["dropped a filter"])
+        state = OmniState(
+            thread_id="t1",
+            route="semantic_agent",
+            metric_match_score=1.0,
+            assumptions=["dropped a filter"],
+        )
         assert compute_confidence(state) == pytest.approx(0.9)
 
     def test_multiple_assumptions_compound(self):
-        state = OmniState(thread_id="t1", metric_match_score=1.0, assumptions=["a", "b", "c"])
+        state = OmniState(
+            thread_id="t1",
+            route="semantic_agent",
+            metric_match_score=1.0,
+            assumptions=["a", "b", "c"],
+        )
         assert compute_confidence(state) == pytest.approx(0.7)
 
     def test_truncated_result_reduces_confidence(self):
-        state = OmniState(thread_id="t1", metric_match_score=1.0, result_meta={"truncated": True})
+        state = OmniState(
+            thread_id="t1",
+            route="semantic_agent",
+            metric_match_score=1.0,
+            result_meta={"truncated": True},
+        )
         assert compute_confidence(state) == pytest.approx(0.9)
 
     def test_confidence_never_negative(self):
         state = OmniState(
             thread_id="t1",
+            route="semantic_agent",
             metric_match_score=0.5,
             assumptions=["a", "b", "c", "d", "e", "f"],
         )
         assert compute_confidence(state) == 0.0
+
+    def test_fallback_route_gets_lower_base_confidence_than_governed(self):
+        """The guarded SQL fallback has no catalog match behind it -- it
+        must not report a higher confidence than a governed match does."""
+        fallback_state = OmniState(thread_id="t1", route="fast_path")
+        governed_state = OmniState(thread_id="t1", route="semantic_agent", metric_match_score=0.9)
+
+        assert compute_confidence(fallback_state) < compute_confidence(governed_state)
 
 
 class TestNeedsCritic:

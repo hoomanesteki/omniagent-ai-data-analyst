@@ -291,6 +291,142 @@ this build, only the deterministic scaffolding around where one would go.
 
 ---
 
+## Post-Roadmap Audit (2026-08-04)
+
+CI had never actually gone green on real GitHub infrastructure, despite passing local
+checks and yamllint/actionlint validation. Two real, previously-invisible bugs, plus a
+full adversarial audit of the entire codebase, found and fixed a number of genuine
+correctness and safety defects that the existing test suite had not caught. Every fix
+below was verified by reproducing the bug for real first, then confirming the fix against
+the same reproduction, not by reasoning about the code alone.
+
+**CI, root-caused against a clean environment (not guessed):**
+
+- `import-linter`'s console script has always been named `lint-imports`, never
+  `import-linter`. Every local run throughout this build had silently succeeded by
+  finding an unrelated global `import-linter` installation on PATH from outside the
+  project's own venv; a clean CI runner has no such stray binary. Fixed by using
+  `lint-imports` everywhere (`justfile`, `ci.yml`, `release.yml`).
+- `huggingface_hub`'s Xet download backend calls a now-deprecated function on every
+  first-time model download, and this project's own `filterwarnings` turns third-party
+  `DeprecationWarning`s into hard errors -- invisible locally once a machine's cache is
+  warm, guaranteed on a fresh clone or a CI runner. Fixed with `HF_HUB_DISABLE_XET=1` in
+  `tests/conftest.py`.
+- Separately, running the fast test tier against a genuinely cold cache under
+  `pytest-xdist` crashed a worker process outright (not a clean exception) when multiple
+  workers raced to load the same embedding model into memory at once, reproducible in a
+  memory-constrained container. Fixed with a `pytest_configure` pre-warm (once, in the
+  controller process, before workers spawn) plus an `xdist_group` marker on every module
+  that touches `FastEmbedProvider`, run with `--dist=loadgroup` so those tests serialize
+  onto one worker instead of racing across several. Verified fixed under both a 2GB and
+  a 4GB constrained container; GitHub's real runners have more headroom than either.
+
+**Safety-critical, found by an adversarial audit of the entire gate stack, confirmed by
+running each one, then fixed:**
+
+- `pii_mask_gate` was a total no-op in every real path: it required a `result_ref`/
+  `result_store` indirection nothing in the codebase ever populated. Verified: a
+  governed breakdown by `customers.email` returned raw emails in both `rows` and the
+  narration text through the full 8-gate stack. Rewritten to mask `state.result_set`
+  directly, by declared-PII-dimension name (covering the governed/fast-path column
+  aliases) and by value shape (covering `sql_agent`'s arbitrary aliasing), running before
+  narration ever reads the result set.
+- `sql_allowlist_gate` was a denylist, not an allowlist, despite its name: `COPY`,
+  `EXPORT`, `ATTACH`, `PRAGMA`, `INSTALL`/`LOAD`, `SET`, and `read_csv`/`read_parquet`
+  table functions all passed every gate and the read-only engine connection. Verified:
+  `COPY (SELECT email FROM ecommerce_customers) TO '/tmp/leak.csv'` succeeded end to end.
+  Fixed by requiring the statement to actually be a `SELECT`/`WITH ... SELECT` (a real
+  allowlist, checked last so specific keyword rejections still give their own reason
+  first) and blocking file/network table functions explicitly. `DuckDBEngine` also now
+  opens with `enable_external_access=False` as defense in depth at the engine level,
+  independent of the gate.
+- `GuardrailPolicy.apply()` treated any gate that crashed (a bug, a bad config) as a gate
+  that passed -- recorded, not raised. Fixed to fail closed: a crash now counts as a
+  violation like a real `Unsafe` would.
+- `numeric_recompute_gate` could never fire in practice: every `GuardrailPolicy.apply()`
+  call site runs before `narrator_node` sets `state.narration`, so the gate's own guard
+  (`if not state.narration: return`) always short-circuited. The "numeric recomputation"
+  invariant BUILD_STATUS had listed as enforced was dead code. Documented as a known,
+  narrower gap rather than fully re-architected this pass (fixing it correctly needs a
+  real post-narration validation step, not a one-line change) -- see "Still open" below.
+- The entire guarded SQL fallback's narration was broken: `narrate()`'s first check
+  (`if not state.semantic_query: return "No results."`) fires for every fast_path/
+  sql_agent answer, since neither node ever sets `semantic_query`. Verified: a real
+  fast-path hit returning 5 real rows narrated "No results." Fixed with a genuine
+  generic fallback narrator for the no-semantic-query case, and `compute_confidence` now
+  gives the fallback path its own lower base confidence (0.6) instead of defaulting to
+  the same 1.0 a perfect catalog match gets.
+- `row_cap_gate` added a boilerplate "Result set limited to N rows maximum" assumption on
+  *every* passing turn regardless of how far under the cap the result was, permanently
+  capping confidence at 0.9 and making the "conditional" critic unconditional. Removed --
+  an assumption is only recorded when a cap genuinely applied (the `truncated` path,
+  which already raises).
+- `eval/redteam.py`'s `is_refused()` counted *any* `error` as a refusal, not only a gate's
+  own recorded refusal. Verified: running all 6 red team cases with
+  `GuardrailPolicy(gates=[])` still reported 6/6 "refused" -- the published red-team
+  refusal rate could not have detected a total gate-stack regression. Fixed to require an
+  actual `guarded[...]["unsafe"]`/`abstain` entry; re-verified the same zero-gates run now
+  correctly reports 0/6.
+- `agents/clarify.py`'s resume path dropped the original question's context: the
+  recorded message became the clarification answer alone (e.g. "Order count"), so a
+  question like "order total by region last month" lost its time range and grouping the
+  moment it needed disambiguating. Fixed by combining the original question with the
+  answer before handing it to `semantic_agent`.
+- `scripts/demo.py`'s trap narration hardcoded `governed refused {len(rows)}` instead of
+  counting real outcomes. Fixed to compute it. `scripts/compare_governed_vs_raw.py`'s
+  "gated vs not" comparison is now honest for the same reason the redteam fix makes it
+  honest -- both read `is_refused()`.
+- `omniagent/adapters/llm/groq.py` declared `llama-3.3-70b-versatile` and
+  `llama-3.1-8b-instant` at an 8192-token context window; both are 131072 on Groq. Inert
+  today (nothing reads `context_window`), fixed while auditing the same file.
+
+**Deliberately not fixed this pass, documented honestly rather than silently dropped:**
+
+- `native_yaml.py`'s 3+-measure FULL OUTER JOIN chain joins every block after the first
+  to the *first* block's key instead of the coalesced key across all prior blocks,
+  producing duplicate rows for a genuinely multi-metric compiled query. Not reachable via
+  `/ask` today (`semantic_agent` only ever sends one metric per turn), reachable via
+  `SemanticProvider.compile()` directly.
+- A ratio metric's numerator is not `COALESCE`d to 0 the way the derived-metric path is,
+  so a group with a real zero numerator reports NULL with a misleading assumption text.
+  Reachable today (`return_rate` is a real catalog metric).
+- Derived-metric expression substitution uses plain `str.replace()` on dependency names,
+  so one name that is a substring of another corrupts the generated SQL.
+- `postgres.py`'s `SET LOCAL statement_timeout = %s` binds a parameter where PostgreSQL's
+  grammar only accepts a literal -- every real `PostgresEngine.execute()` call would fail;
+  never caught because the conformance suite is skipped without a live server.
+- `/feedback` is keyed by `thread_id`, not by turn, while the UI shows a thumbs-up per
+  turn -- approving an early turn on a multi-turn thread can promote a *later* turn's SQL
+  into the verified-query store. `thread_id` also has no identity/auth check on any of
+  `/ask`, `/resume`, `/feedback` (or their MCP equivalents) -- any caller who knows or
+  guesses one can act on it.
+- `eval/goldgen.py`'s golden set picks the first categorical dimension in YAML
+  declaration order for every breakdown item, which for the e-commerce pack is always
+  `orders.order_status` -- the column its metrics already filter on -- so a large fraction
+  of breakdown items grade against all-NULL/zero groups and no e-commerce breakdown
+  exercises a real join.
+- `scorers.py`'s percentile bootstrap is degenerate at the boundary: when every score is
+  1.0 (as every metric in the current scorecard is), it publishes a `[100%, 100%]`
+  interval that isn't a meaningful confidence bound at the real sample sizes (n=6 for the
+  red team, n=147 for the golden set, itself 42 distinct queries repeated 3-4× with
+  paraphrases sharing one ground truth, not 147 independent trials).
+- Several lower-severity gate false positives (a semicolon or a keyword inside a string
+  literal tripping the allowlist's statement-count/keyword checks), a `sql_allowlist`
+  vs. `provenance` inconsistency (two separate, drifted copies of a similar denylist),
+  and a handful of `LOW`-severity edge cases (a NULL narrated as "leads at None" now fixed
+  by sorting NULLs last; a breakdown capped at its 100-row limit now says "at least N
+  groups" instead of a flat count, and is now genuinely ordered by the metric descending
+  so the "leader" claim is actually true -- see `semantic_agent.py`'s new `order_by`).
+
+The full, unedited findings (every file:line, every reproduction) came from four
+independent adversarial passes over kernel/gates, agents/graph, adapters/channels, and
+scripts/eval. What's listed above is what got fixed or explicitly deferred this pass, not
+the complete list of everything found -- treat this section as the audit trail for what
+changed, not a substitute for re-running the audit before trusting a claim about a part
+of the system not mentioned here.
+
+---
+
 ## Quality Gates
 
 - **Every commit:** ruff, ruff format, mypy (kernel/agents/channels/adapters/memory),

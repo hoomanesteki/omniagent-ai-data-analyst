@@ -20,6 +20,7 @@ from __future__ import annotations
 from langgraph.types import Command, interrupt
 
 from omniagent.agents.master import dispatch_match
+from omniagent.agents.messages import latest_user_message
 from omniagent.agents.node_types import GraphNode
 from omniagent.kernel.catalog import Catalog
 from omniagent.kernel.state import OmniState
@@ -32,17 +33,26 @@ def make_clarify_node(*, catalog: Catalog, fallback_route: str | None = None) ->
 
     async def clarify_node(state: OmniState) -> Command[str]:
         prompt = state.clarification or _DEFAULT_PROMPT
+        # Captured before interrupt() pauses, so it is the question this
+        # clarification round is actually disambiguating -- semantic_agent's
+        # one extraction call reads only the *latest* user message
+        # (messages accumulates across the whole thread, not just this
+        # turn), so without this, resuming with a short answer like "Order
+        # count" would silently drop the original question's own time
+        # phrase, filters, and grouping instead of just picking the metric.
+        original_question = latest_user_message(state)
         answer = interrupt(prompt)
 
         result = catalog.match(str(answer))
         command = dispatch_match(
             result, catalog, fallback_route=fallback_route, clarify_route="clarify"
         )
+        resumed_message = f"{original_question} ({answer})" if original_question else str(answer)
         return Command(
             goto=command.goto,
             update={
                 **(command.update or {}),
-                "messages": [{"role": "user", "content": str(answer)}],
+                "messages": [{"role": "user", "content": resumed_message}],
             },
         )
 

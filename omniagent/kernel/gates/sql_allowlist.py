@@ -36,7 +36,36 @@ async def sql_allowlist_gate(state: OmniState, *, config: dict[str, Any]) -> Omn
     # Extract config with sensible defaults
     blocked_keywords = config.get(
         "blocked_keywords",
-        ["DROP", "CREATE", "ALTER", "DELETE", "INSERT", "UPDATE", "TRUNCATE"],
+        [
+            "DROP",
+            "CREATE",
+            "ALTER",
+            "DELETE",
+            "INSERT",
+            "UPDATE",
+            "TRUNCATE",
+            # These do not write to the database file, so `read_only=True`
+            # alone does not stop them (see docs/adr/0005): COPY/EXPORT write
+            # to the filesystem, ATTACH/INSTALL/LOAD pull in another database
+            # or extension, PRAGMA/SET/CALL/VACUUM/CHECKPOINT/ANALYZE change
+            # session or database state, GRANT/REVOKE/COMMENT touch schema
+            # metadata.
+            "COPY",
+            "EXPORT",
+            "ATTACH",
+            "DETACH",
+            "PRAGMA",
+            "INSTALL",
+            "LOAD",
+            "CALL",
+            "SET",
+            "VACUUM",
+            "CHECKPOINT",
+            "ANALYZE",
+            "GRANT",
+            "REVOKE",
+            "COMMENT",
+        ],
     )
     max_statements = config.get("max_statements", 1)
     reject_cte_with_dml = config.get("reject_cte_with_dml", True)
@@ -44,6 +73,16 @@ async def sql_allowlist_gate(state: OmniState, *, config: dict[str, Any]) -> Omn
 
     # Normalize SQL: remove comments and extra whitespace
     normalized_sql = _normalize_sql(sql)
+
+    # Check 0: table functions that read from the filesystem or network can
+    # appear inside an otherwise-valid SELECT (e.g. `read_csv_auto('/etc/passwd')`
+    # or `read_parquet('s3://...')`), so the SELECT-only check further down does
+    # not by itself stop them.
+    if _contains_file_or_network_read(normalized_sql):
+        raise Unsafe(
+            reason="Reading external files or network locations (read_csv, "
+            "read_parquet, read_json, glob, http(s)://, s3://) is not allowed."
+        )
 
     # Check 1: Reject stacked statements (multiple SQL statements)
     statement_count = _count_sql_statements(normalized_sql)
@@ -88,6 +127,18 @@ async def sql_allowlist_gate(state: OmniState, *, config: dict[str, Any]) -> Omn
     if _has_union_based_obfuscation(normalized_sql):
         raise Unsafe(reason="Complex UNION patterns with EXCEPT/INTERSECT may be unsafe.")
 
+    # Check 8: the statement itself must be a SELECT or a WITH ... SELECT --
+    # this is what makes this gate an *allowlist* rather than a denylist that
+    # only blocks verbs someone thought to name, and it is the final catch-all
+    # after the checks above, not the first check, so an already-blocked
+    # keyword still raises its own specific reason. A denylist alone missed
+    # several real, dangerous verbs (COPY, ATTACH, PRAGMA, INSTALL/LOAD, SET)
+    # until this was added.
+    if not re.match(r"^\s*(SELECT|WITH)\b", normalized_sql, re.IGNORECASE):
+        raise Unsafe(
+            reason="Only SELECT (optionally with a leading WITH clause) statements are allowed."
+        )
+
     # All checks passed
     return state
 
@@ -123,6 +174,21 @@ def _contains_keyword(sql: str, keyword: str) -> bool:
     # Case-insensitive word boundary match
     pattern = r"\b" + re.escape(keyword) + r"\b"
     return re.search(pattern, sql, re.IGNORECASE) is not None
+
+
+_FILE_OR_NETWORK_READ_RE = re.compile(
+    r"\b(read_csv\w*|read_parquet|read_json\w*|read_ndjson\w*|glob|sniff_csv)\s*\(|"
+    r"['\"](https?|s3|gcs|gs|azure|hf)://",
+    re.IGNORECASE,
+)
+
+
+def _contains_file_or_network_read(sql: str) -> bool:
+    """DuckDB table functions (or URL schemes) that read from the filesystem
+    or network, usable inside an otherwise-plain SELECT to exfiltrate or read
+    arbitrary local/remote data regardless of the connection's `read_only`
+    setting."""
+    return _FILE_OR_NETWORK_READ_RE.search(sql) is not None
 
 
 def _has_dml_in_cte(sql: str) -> bool:

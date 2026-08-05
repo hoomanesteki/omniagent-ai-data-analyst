@@ -19,9 +19,32 @@ os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 
 
 def pytest_configure(config):
-    """Configure pytest with additional markers."""
-    # Markers are already defined in pyproject.toml, but we can add runtime setup here
-    pass
+    """Pre-warm the fast path's embedding model once, in the controller
+    process, before pytest-xdist spawns worker processes.
+
+    `hasattr(config, "workerinput")` is xdist's own idiom for "this is a
+    worker, not the controller" -- it's only set on workers. Without this,
+    every worker that happens to run a fastembed-touching test for the
+    first time races to download and load the same model into
+    `/tmp/fastembed_cache` concurrently; on a memory-constrained runner
+    this has been observed to crash the worker process outright (not a
+    clean Python exception, "node down: not properly terminated"), not
+    just log a benign download-collision warning. Warming it once here
+    means every worker's own FastEmbedProvider() construction just loads
+    an already-complete file from disk instead of racing a download.
+    """
+    if hasattr(config, "workerinput"):
+        return
+    try:
+        from omniagent.adapters.embeddings import FastEmbedProvider
+
+        FastEmbedProvider()
+    except Exception as exc:  # noqa: BLE001 - best-effort warm-up, never fatal here
+        # If this fails (offline, extra not installed), let whichever
+        # worker actually needs the model surface the real error itself
+        # rather than masking it here -- just note that the warm-up itself
+        # didn't happen.
+        print(f"fastembed pre-warm skipped: {exc}")  # noqa: T201
 
 
 @pytest.fixture

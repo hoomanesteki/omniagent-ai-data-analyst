@@ -92,9 +92,11 @@ class TestGovernedPathAcceptance:
         assert result["result_set"] == [{"net_revenue": 205.0}]
         assert result["narration"] == "Net revenue was $205.00."
         assert result["chart_spec"] is None  # single KPI, no chart
-        # 1.0 catalog match score minus the row_cap_gate's always-present
-        # "result capped at N rows" transparency notice (one assumption).
-        assert result["confidence"] == 0.9
+        # A perfect catalog name match with no assumptions recorded and a
+        # result genuinely within the row cap (not truncated) keeps the
+        # full 1.0 -- row_cap_gate only records an assumption when a real
+        # cap actually applied, not on every passing turn.
+        assert result["confidence"] == 1.0
 
     @pytest.mark.integration
     async def test_governed_path_never_touches_sql_fallback(self, provider, ecommerce_warehouse):
