@@ -64,10 +64,13 @@ jobs:
         run: uv sync --locked --all-extras --dev
 
       - name: Run fast test tiers
-        run: >-
-          uv run pytest tests/unit tests/contract tests/component tests/perf
-          -n auto --dist=loadgroup --tb=short --junitxml=junit.xml
-          --cov=omniagent --cov-report=term-missing --cov-report=xml
+        shell: bash
+        run: |
+          set -o pipefail
+          uv run pytest tests/unit tests/contract tests/component tests/perf \
+            -n auto --dist=loadgroup --tb=long -rA \
+            --cov=omniagent --cov-report=term-missing --cov-report=xml \
+            2>&1 | tee pytest_output.log
 
       - name: Upload coverage report
         if: always()
@@ -78,16 +81,47 @@ jobs:
           retention-days: 14
 
       # Temporary diagnostic: the runner's own job logs aren't downloadable
-      # without an authenticated admin token, so this publishes failing test
-      # names/tracebacks as check-run annotations instead, which the public
-      # API does expose. Remove once the current CI failure is root-caused.
-      - name: Publish failing test annotations
-        if: always()
-        uses: mikepenz/action-junit-report@v4
-        with:
-          report_paths: junit.xml
-          require_tests: false
-          annotate_only: true
+      # without an authenticated admin token, so on failure this posts the
+      # tail of pytest's own output as a separate check run, whose `output`
+      # field the public unauthenticated API does expose. Remove once the
+      # current CI failure is root-caused.
+      - name: Publish failure detail as a check run
+        if: failure()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          with open("pytest_output.log", "rb") as f:
+              tail = f.read()[-60000:].decode("utf-8", errors="replace")
+
+          payload = json.dumps(
+              {
+                  "name": "Fast tests failure detail",
+                  "head_sha": os.environ["GITHUB_SHA"],
+                  "status": "completed",
+                  "conclusion": "neutral",
+                  "output": {"title": "pytest output tail", "summary": "See text", "text": tail},
+              }
+          ).encode("utf-8")
+
+          req = urllib.request.Request(
+              f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/check-runs",
+              data=payload,
+              method="POST",
+              headers={
+                  "Authorization": f"token {os.environ['GITHUB_TOKEN']}",
+                  "Accept": "application/vnd.github+json",
+                  "Content-Type": "application/json",
+              },
+          )
+          with urllib.request.urlopen(req) as resp:
+              print(resp.status)
+          PY
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
 
   integration:
     name: Integration and e2e tests
