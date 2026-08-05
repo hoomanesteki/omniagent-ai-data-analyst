@@ -118,13 +118,13 @@ suggestions are template-first everywhere, always zero extra calls (see
 
 - **One model call is the default, not the exception.** A catalog-matched
   question (the common case in any well-modeled domain) makes exactly one
-  narrow LLM call — extracting a time phrase and filters — then compiles
+  narrow LLM call -- extracting a time phrase and filters -- then compiles
   deterministic SQL and narrates from a template. No routing decision, no
   narration, no chart choice ever costs a model call.
 - **The verified-query cache is the real cost saver, not a caching
   trick.** A thumbs-up on a fallback answer stores its SQL. A later
   paraphrase of the same question skips the model entirely and
-  re-executes that stored query against current data — cached at the
+  re-executes that stored query against current data -- cached at the
   *query* level, not the *answer* level, so it can never go stale (see
   [docs/adr/0006](docs/adr/0006-verified-query-fast-path-reexecutes.md)).
   A same-shape-different-metric near miss scores high enough on embedding
@@ -134,12 +134,12 @@ suggestions are template-first everywhere, always zero extra calls (see
 - **Cheap model for routine calls, a different model where it's worth
   it.** `build_governed_graph` takes an independent `model_id` for the
   main path, `router_model_id` for intent routing, and
-  `sql_agent_model_id` for the guarded fallback — an operator can point
+  `sql_agent_model_id` for the guarded fallback -- an operator can point
   routine extraction at a fast, inexpensive tier (Groq's `gpt-oss-20b`
   runs about $0.075 in / $0.30 out per million tokens) and reserve a
   stronger model for the one path where a model writes SQL directly. This
   is a deployment choice made once at startup, not automatic runtime
-  escalation — `OmniState` carries a `tier_bump` field for that kind of
+  escalation -- `OmniState` carries a `tier_bump` field for that kind of
   adaptive routing, and it is honestly unused today, not wired to
   anything.
 - **Prompt caching is the provider's job, not a feature built here.**
