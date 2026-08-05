@@ -204,7 +204,10 @@ def main() -> None:
             datasets.update(build_default_datasets(checkpointer=checkpointer))
             yield
 
-    app = create_app(datasets, lifespan=lifespan)
+    cors_env = os.getenv("OMNIAGENT_CORS_ORIGINS")
+    allow_origins = [origin.strip() for origin in cors_env.split(",")] if cors_env else None
+
+    app = create_app(datasets, lifespan=lifespan, allow_origins=allow_origins)
     uvicorn.run(app, host=args.host, port=args.port)
 
 

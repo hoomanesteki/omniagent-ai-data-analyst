@@ -23,13 +23,14 @@ import hashlib
 import json
 import logging
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
@@ -45,6 +46,11 @@ from omniagent.kernel.state import OmniState
 from omniagent.kernel.telemetry import Tracer, mask_value
 
 _logger = logging.getLogger("omniagent.service")
+
+# The Next.js frontend (web/) calls this API directly from the browser, so it
+# needs an explicit origin allowlist -- Streamlit doesn't, since it calls
+# this API server-side from Python, never through a browser's own fetch.
+_DEFAULT_CORS_ORIGINS = ("http://localhost:3000", "http://127.0.0.1:3000")
 
 
 @dataclass
@@ -243,6 +249,7 @@ def create_app(  # noqa: C901 - five small route handlers as closures, not one b
     datasets: dict[str, DatasetRuntime],
     *,
     lifespan: Callable[[FastAPI], AbstractAsyncContextManager[None]] | None = None,
+    allow_origins: Sequence[str] | None = None,
 ) -> FastAPI:
     """Build the FastAPI app over a set of dataset runtimes.
 
@@ -255,8 +262,21 @@ def create_app(  # noqa: C901 - five small route handlers as closures, not one b
     (`AsyncSqliteSaver`) has to be opened inside the event loop uvicorn
     actually serves requests on, not a throwaway one used only to build
     graphs before `uvicorn.run()` starts its own.
+
+    `allow_origins` defaults to the Next.js dev server's own origin (see
+    `_DEFAULT_CORS_ORIGINS`) -- a browser-based channel, unlike every other
+    channel this service has today, needs CORS to call it at all.
     """
     app = FastAPI(title="OmniAgent", version="2.0.0", lifespan=lifespan)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=list(allow_origins)
+        if allow_origins is not None
+        else list(_DEFAULT_CORS_ORIGINS),
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Content-Type"],
+    )
     threads: dict[str, ThreadInfo] = {}
 
     @app.get("/health")
