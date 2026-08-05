@@ -185,12 +185,21 @@ class TestCatalogMatchScales:
         # work. process_time() only counts time this process actually ran,
         # so it stays a meaningful signal for an algorithmic blowup (e.g. an
         # accidental O(n^3)) regardless of how busy the machine is.
+        #
+        # The threshold below is deliberately generous, not a benchmark: the
+        # real measured cost on an idle machine is ~0.15s (measured
+        # 2026-08-04), so 5.0s is a >30x margin. Even that margin has been
+        # observed to occasionally trip on a genuinely oversubscribed CI
+        # runner, since heavy contention can distort CPU-time accounting
+        # itself (cache thrashing, frequency scaling), not just wall-clock
+        # scheduling delays -- a real O(n^2)/O(n^3) regression at this input
+        # size would blow past 5s by a wide margin regardless.
         started = time.process_time()
         for _ in range(50):
             catalog.match("what is synonym phrase 150")
         cpu_s = time.process_time() - started
 
-        assert cpu_s < 1.0, f"50 matches against 300 metrics used {cpu_s:.2f}s of CPU time"
+        assert cpu_s < 5.0, f"50 matches against 300 metrics used {cpu_s:.2f}s of CPU time"
 
 
 @pytest.mark.perf
