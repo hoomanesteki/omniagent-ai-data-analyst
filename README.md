@@ -58,31 +58,96 @@ instead of a human, then the scorecard.
 
 ## How it decides
 
-```text
-question
-   │
-   ▼
-deterministic catalog match ──miss──▶ router (1 LLM call) ──▶ clarify or fallback
-   │ hit                                                            │
-   ▼                                                                ▼
-semantic_agent (1 LLM call:                                  sql_agent (schema-linked
- time phrase + filters)                                       generation, bounded retry)
-   │                                                                │
-   ▼                                                                ▼
-compile deterministic SQL                                    generated SQL
-   │                                                                │
-   └──────────────────────────┬─────────────────────────────────────┘
-                               ▼
-                    8-gate GuardrailPolicy (pre- and post-execution)
-                               │
-                               ▼
-                    execute, narrate, chart, suggest follow-ups
+Every box below is real code, not a plan. Blue nodes are the only places a
+model is called at all, and each one answers a single narrow question, not
+"what should happen next" (see
+[docs/adr/0002](docs/adr/0002-gated-autonomy-deterministic-routing.md)).
+Green is the path that skips the model entirely. Red is the one place a
+model writes SQL directly, which is exactly why it carries the heaviest
+gating.
+
+```mermaid
+flowchart TD
+    U["Streamlit UI · REST client · MCP client"] --> ASK["one question, one thread_id"]
+    ASK --> MASTER{"master<br/>deterministic catalog match"}
+
+    MASTER -->|hit| SEM["semantic_agent<br/>1 LLM call: time phrase + filters"]
+    MASTER -->|miss| ROUTER["router<br/>1 LLM call: intent"]
+
+    ROUTER -->|ambiguous| CLARIFY["clarify<br/>pauses via interrupt()"]
+    ROUTER -->|data question| FASTPATH{"fast_path<br/>verified-query cache lookup"}
+    CLARIFY -.->|resume with answer| MASTER
+
+    FASTPATH -->|hit| REEXEC["re-execute the cached SQL<br/>never trust a stored result"]
+    FASTPATH -->|miss| SQLAGENT["sql_agent<br/>schema-linked SQL, bounded retries"]
+
+    SEM --> COMPILE["compile deterministic SQL<br/>semantic layer, no model"]
+
+    COMPILE --> GATES
+    REEXEC --> GATES
+    SQLAGENT --> GATES
+
+    GATES["8-gate GuardrailPolicy<br/>allowlist · row cap · timeout · empty-result<br/>numeric recompute · PII mask · provenance · LLM budget<br/>every gate runs, pre- and post-execution, no short-circuit"]
+
+    GATES --> ENGINE["DuckDB / Postgres<br/>read-only, external access disabled"]
+    ENGINE --> NARRATE["narrator + charts + suggester<br/>template-first, no model call"]
+    NARRATE --> ENV["AnswerEnvelope<br/>narration, rows, chart, executed_sql, confidence"]
+    ENV --> U
+
+    classDef model fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+    classDef free fill:#dcfce7,stroke:#16a34a,color:#14532d
+    classDef risky fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+    classDef gate fill:#fef3c7,stroke:#d97706,color:#78350f
+    class SEM,ROUTER model
+    class FASTPATH,REEXEC free
+    class SQLAGENT risky
+    class GATES gate
 ```
 
-A model is never asked "what should happen next in the graph." It answers
-narrow, typed questions (does this phrase name a known metric filter, is
-this SQL worth attempting) whose outputs feed a graph edge a human already
-designed. See [docs/adr/0002](docs/adr/0002-gated-autonomy-deterministic-routing.md).
+A catalog hit costs exactly one model call for the entire turn. A
+fast-path hit costs zero, because the SQL was already verified, though it
+still re-executes against current data rather than serving a stored
+answer. The fallback (`sql_agent`) is the one place a model writes SQL
+from scratch, so it is the one path that runs schema-linked generation
+with a bounded self-correction loop and pays for it with the most retries
+and the strictest scrutiny. Narration, chart selection, and follow-up
+suggestions are template-first everywhere, always zero extra calls (see
+[docs/adr/0001](docs/adr/0001-semantic-layer-first-guarded-fallback.md)).
+
+## Where the cost actually goes
+
+- **One model call is the default, not the exception.** A catalog-matched
+  question (the common case in any well-modeled domain) makes exactly one
+  narrow LLM call — extracting a time phrase and filters — then compiles
+  deterministic SQL and narrates from a template. No routing decision, no
+  narration, no chart choice ever costs a model call.
+- **The verified-query cache is the real cost saver, not a caching
+  trick.** A thumbs-up on a fallback answer stores its SQL. A later
+  paraphrase of the same question skips the model entirely and
+  re-executes that stored query against current data — cached at the
+  *query* level, not the *answer* level, so it can never go stale (see
+  [docs/adr/0006](docs/adr/0006-verified-query-fast-path-reexecutes.md)).
+  A same-shape-different-metric near miss scores high enough on embedding
+  similarity to fool a low threshold, so this path only trusts a hit
+  above roughly 0.9 cosine similarity, calibrated against the real
+  embedder, not guessed.
+- **Cheap model for routine calls, a different model where it's worth
+  it.** `build_governed_graph` takes an independent `model_id` for the
+  main path, `router_model_id` for intent routing, and
+  `sql_agent_model_id` for the guarded fallback — an operator can point
+  routine extraction at a fast, inexpensive tier (Groq's `gpt-oss-20b`
+  runs about $0.075 in / $0.30 out per million tokens) and reserve a
+  stronger model for the one path where a model writes SQL directly. This
+  is a deployment choice made once at startup, not automatic runtime
+  escalation — `OmniState` carries a `tier_bump` field for that kind of
+  adaptive routing, and it is honestly unused today, not wired to
+  anything.
+- **Prompt caching is the provider's job, not a feature built here.**
+  `ModelCapabilities.prompt_caching` records that Groq caches repeated
+  prompt prefixes automatically at the API level; OmniAgent's own prompts
+  are already narrow and templated (see `adapters/llm/prompting.py`), so
+  they are exactly the repeated-prefix shape that caching helps with, but
+  the caching itself happens on Groq's side, not in this codebase.
 
 ## Try it
 
