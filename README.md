@@ -68,7 +68,7 @@ gating.
 
 ```mermaid
 flowchart TD
-    U["Streamlit UI · REST client · MCP client"] --> ASK["one question, one thread_id"]
+    U["Streamlit UI · Next.js UI · REST client · MCP client"] --> ASK["one question, one thread_id"]
     ASK --> MASTER{"master<br/>deterministic catalog match"}
 
     MASTER -->|hit| SEM["semantic_agent<br/>1 LLM call: time phrase + filters"]

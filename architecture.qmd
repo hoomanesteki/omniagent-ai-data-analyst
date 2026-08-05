@@ -21,7 +21,7 @@ file into the other and have both render correctly on their own platform.
 -->
 ```{mermaid}
 flowchart TD
-    U["Streamlit UI · REST client · MCP client"] --> ASK["one question, one thread_id"]
+    U["Streamlit UI · Next.js UI · REST client · MCP client"] --> ASK["one question, one thread_id"]
     ASK --> MASTER{"master<br/>deterministic catalog match"}
 
     MASTER -->|hit| SEM["semantic_agent<br/>1 LLM call: time phrase + filters"]
@@ -66,6 +66,33 @@ with a bounded self-correction loop and pays for it with the most retries
 and the strictest scrutiny. Narration, chart selection, and follow-up
 suggestions are template-first everywhere, always zero extra calls (see
 [docs/adr/0001](docs/adr/0001-semantic-layer-first-guarded-fallback.md)).
+
+## Two frontends, one gate stack
+
+Neither UI gets a shortcut. Both call the same four endpoints
+(`/datasets`, `/ask`, `/resume`, `/feedback`) and see every answer only
+after it has already passed the full gate stack below.
+
+::: {.lane-row}
+<div class="lane">
+<span class="lane-tag">Streamlit</span>
+<h4>The reference UI</h4>
+<p>Server-rendered Python, no build step. Calls the API directly from the
+server process, so it never needed CORS.</p>
+</div>
+<div class="lane">
+<span class="lane-tag">Next.js</span>
+<h4>A second, independent app</h4>
+<p>TypeScript, Tailwind, and Vega-Lite charts drawn straight from the
+same <code>ChartSpec</code> the API already returns. Calls the API from
+the browser, which is the one thing that needed a real backend change
+(CORS).</p>
+</div>
+:::
+
+Run either one, or both at once, against the same running API:
+`streamlit run omniagent/channels/streamlit_app.py` on `:8501`, `just web`
+on `:3000`.
 
 ## Where the cost actually goes
 

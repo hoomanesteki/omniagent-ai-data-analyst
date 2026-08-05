@@ -441,6 +441,37 @@ of the system not mentioned here.
 
 ---
 
+## Second frontend: Next.js (2026-08-05)
+
+`web/` is a second, independent UI (Next.js, TypeScript, Tailwind, shadcn/ui,
+`react-vega`) alongside the existing Streamlit app, both consuming only the same
+public REST API. Required exactly one backend change: CORS on
+`omniagent/channels/service.py`'s `create_app()`, defaulted so every existing
+caller is unaffected. Everything else lives entirely outside `omniagent/`,
+`tests/`, and `scripts/`, so `just lint`/`just test`/CI never had to change --
+verified, not assumed, by running the full 989-test suite plus lint/mypy/
+import-linter after the addition.
+
+Verified against a real running backend (`ScriptedLLM` standing in for Groq, no
+`GROQ_API_KEY` in this sandbox, the real DuckDB warehouse): a single-KPI answer,
+a breakdown answer with a chart, a non-resumable clarification, thread
+continuity across turns, feedback, and the 404/409 error paths all produced
+exactly the shapes the frontend expects. That caught one real bug:
+`AnswerEnvelope.headline` and `.narration` are always the same string, not just
+usually (see `result_to_envelope` in `service.py`), so a single-KPI answer's tile
+was showing the full narrated sentence as its label instead of a short metric
+name. Fixed; the two captured real responses are now permanent zod-parsing
+regression fixtures in `web/lib/types.test.ts`.
+
+Honest limitation: no headless-browser tool was available to visually verify
+the rendered UI. Correctness is verified through real API responses, a passing
+Vitest suite, a clean production `next build`, and code review -- not a visual
+walkthrough. Component/DOM tests are deliberately deferred for the same reason
+noted in `web/README.md`: this UI iterates fast, and mocking `react-vega` under
+jsdom would cost real time for tests likely rewritten within a week.
+
+---
+
 ## Quality Gates
 
 - **Every commit:** ruff, ruff format, mypy (kernel/agents/channels/adapters/memory),
