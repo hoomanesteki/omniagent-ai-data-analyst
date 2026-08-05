@@ -3,6 +3,7 @@ project:
   output-dir: _site
   render:
     - index.qmd
+    - architecture.qmd
     - BUILD_STATUS.md
     - docs/PILOT_RUNBOOK.md
     - docs/adr/README.md
@@ -15,6 +16,8 @@ website:
     left:
       - href: index.qmd
         text: Home
+      - href: architecture.qmd
+        text: Architecture
       - href: BUILD_STATUS.md
         text: Build Status
       - href: docs/adr/README.md
