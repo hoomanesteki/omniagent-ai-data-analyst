@@ -257,3 +257,18 @@ __marimo__/
 /.quarto/
 **/*.quarto_ipynb
 /_site/
+
+# Next.js frontend (web/) -- the bare `lib/` and `build/` rules above are
+# Python packaging artifacts and match at any depth, so re-include the
+# frontend's own source dir explicitly or it goes dark to git entirely.
+!web/lib/
+!web/lib/**
+web/node_modules/
+web/.next/
+web/out/
+web/build/
+web/.turbo/
+web/next-env.d.ts
+web/.env.local
+web/coverage/
+web/*.tsbuildinfo

@@ -5,6 +5,7 @@ repos:
     hooks:
       - id: check-added-large-files
         args: ["--maxkb=500"]
+        exclude: ^web/package-lock\.json$
       - id: check-merge-conflict
       - id: check-yaml
       - id: check-toml

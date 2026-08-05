@@ -1,8 +1,10 @@
 # `docker compose up` reproduces a correct answer end to end: `init`
 # generates the sample data and loads the DuckDB warehouse once, `api`
-# waits for that to finish before serving, and `ui` waits for `api`. The
-# `mcp` service is behind a profile since most runs only need the REST API
-# and the UI -- `docker compose --profile mcp up` adds it.
+# waits for that to finish before serving, and `ui`/`web` both wait for
+# `api` -- two independent frontends against the same backend, Streamlit
+# on :8501 and the Next.js app on :3000. The `mcp` service is behind a
+# profile since most runs only need the REST API and the UIs --
+# `docker compose --profile mcp up` adds it.
 #
 # Requires GROQ_API_KEY in the environment (or a .env file next to this
 # file, since `just` and this compose file both load dotenv).
@@ -46,6 +48,22 @@ services:
         "--server.port",
         "8501",
       ]
+
+  web:
+    build:
+      context: ./web
+      args:
+        # Baked into the client bundle at build time, so this must be the
+        # URL the USER'S BROWSER can reach -- not the compose-internal
+        # http://api:8000 the `ui` service uses, which only resolves inside
+        # the compose network and never in the browser running on the host.
+        # The api service already publishes 8000 to the host, so
+        # localhost:8000 is correct here regardless of container networking.
+        - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
 
   mcp:
     build: .

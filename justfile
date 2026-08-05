@@ -35,6 +35,19 @@ serve:
 serve-mcp:
     uv run python scripts/serve_mcp.py
 
+web-install:
+    cd web && npm install
+
+# Next.js frontend dev server on :3000. Needs the API running (`just serve`).
+web:
+    cd web && npm run dev
+
+web-build:
+    cd web && npm run build
+
+web-check:
+    cd web && npm run typecheck && npm run lint && npm test
+
 docker-up:
     docker compose up --build
 
@@ -60,6 +73,10 @@ help:
     @echo "  make compare    - regenerate the governed-vs-raw comparison chart"
     @echo "  make serve      - run the REST API against real adapters"
     @echo "  make serve-mcp  - run the MCP server against real adapters"
+    @echo "  make web        - Next.js frontend dev server on :3000 (needs 'make serve')"
+    @echo "  make web-install - install the frontend's npm dependencies"
+    @echo "  make web-build  - production build of the frontend"
+    @echo "  make web-check  - typecheck, lint, and test the frontend"
     @echo "  make docker-up  - build and run the full stack via docker compose"
     @echo "  make docker-down - stop the docker compose stack and remove volumes"
     @echo "  make docs       - render the Quarto docs site to _site/"

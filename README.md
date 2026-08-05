@@ -164,12 +164,17 @@ export GROQ_API_KEY=...         # a real model, for the actual services
 just serve                      # REST API on :8000
 just serve-mcp                  # MCP server, stdio by default
 
-docker compose up --build       # the whole stack (init, api, ui): see below
+just serve &                    # keep the API running, then pick a UI:
+streamlit run omniagent/channels/streamlit_app.py   # on :8501
+just web-install && just web    # Next.js app on :3000 -- same API, same gates, no Streamlit
+
+docker compose up --build       # the whole stack (init, api, ui, web): see below
 ```
 
 `docker compose up` builds one image, generates both packs' sample data
 and loads the warehouse in an `init` service, then brings up the REST API
-(`:8000`) and Streamlit UI (`:8501`); an `mcp` service is available behind
+(`:8000`) and two independent frontends against it -- the Streamlit UI
+(`:8501`) and a Next.js app (`:3000`); an `mcp` service is available behind
 `docker compose --profile mcp up`. Needs `GROQ_API_KEY` in the environment
 (or a `.env` file) to actually answer questions; without one it still
 builds, generates data, and serves `/health`/`/datasets`, failing fast
@@ -193,8 +198,9 @@ with a clear error on `/ask` instead of guessing.
   golden sets generated backwards from real execution, never checked in as
   static data, so they can't drift out of sync with the packs or warehouse.
 - **MCP with no raw-SQL tool** ([0012](docs/adr/0012-mcp-mirrors-rest-no-raw-sql.md)):
-  the same four capabilities (discover, ask, resume, feedback) the REST API
-  and the Streamlit UI get, nothing more direct, over the same gate stack.
+  the same four capabilities (discover, ask, resume, feedback) both UIs
+  (Streamlit and the Next.js app) get, nothing more direct, over the same
+  gate stack.
 - **Two real datasets, one real engine, one real semantic provider**:
   e-commerce and SaaS packs, fully exercised through DuckDB and a
   self-contained YAML semantic layer. Postgres and dbt/MetricFlow are
