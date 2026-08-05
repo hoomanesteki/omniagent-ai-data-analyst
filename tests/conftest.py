@@ -1,6 +1,7 @@
 """Pytest configuration and shared fixtures for omniagent tests."""
 
 import os
+import time
 
 import duckdb
 import pytest
@@ -35,16 +36,30 @@ def pytest_configure(config):
     """
     if hasattr(config, "workerinput"):
         return
-    try:
-        from omniagent.adapters.embeddings import FastEmbedProvider
 
-        FastEmbedProvider()
-    except Exception as exc:  # noqa: BLE001 - best-effort warm-up, never fatal here
-        # If this fails (offline, extra not installed), let whichever
-        # worker actually needs the model surface the real error itself
-        # rather than masking it here -- just note that the warm-up itself
-        # didn't happen.
-        print(f"fastembed pre-warm skipped: {exc}")  # noqa: T201
+    from omniagent.adapters.embeddings import FastEmbedProvider
+
+    # A handful of retries: on a shared CI runner, the anonymous Hugging
+    # Face Hub download this triggers can hit a transient rate limit or
+    # network blip that a developer machine's first run essentially never
+    # sees. Retrying here is cheap (a failed attempt fails fast) and turns
+    # a one-off network hiccup into a warm cache instead of every worker
+    # independently hitting the same failure later with no retry of its own.
+    last_exc: Exception | None = None
+    for attempt in range(3):
+        try:
+            FastEmbedProvider()
+            return
+        except Exception as exc:  # noqa: BLE001 - retried below, not swallowed silently
+            last_exc = exc
+            if attempt < 2:
+                time.sleep(2**attempt)
+
+    # If every attempt failed (offline, extra not installed, a genuinely
+    # down endpoint), let whichever worker actually needs the model surface
+    # the real error itself rather than masking it here -- just note that
+    # the warm-up itself didn't happen.
+    print(f"fastembed pre-warm skipped after 3 attempts: {last_exc}")  # noqa: T201
 
 
 @pytest.fixture
