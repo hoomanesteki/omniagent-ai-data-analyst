@@ -176,16 +176,23 @@ class TestGuardrailPolicyViolations:
 
 
 class TestGuardrailPolicyUnexpectedErrors:
-    """A gate raising a non-Unsafe exception is captured, not fatal."""
+    """A gate raising a non-Unsafe exception fails closed, exactly like a
+    real Unsafe would -- a safety gate that crashes is not a gate that
+    passed. The crash is still recorded in `guarded` for the audit trail,
+    and the remaining gates still run (for full audit coverage), but
+    `apply()` raises once the loop ends either way."""
 
-    def test_unexpected_exception_recorded_not_raised(self) -> None:
+    def test_unexpected_exception_raises_unsafe(self) -> None:
         policy = GuardrailPolicy(gates=[_buggy_gate])
         state = OmniState(thread_id="t1")
 
-        result = asyncio.run(policy.apply(state))
+        with pytest.raises(Unsafe) as exc_info:
+            asyncio.run(policy.apply(state))
 
-        assert result.guarded["_buggy_gate"]["exception_type"] == "ValueError"
-        assert "unexpected bug" in result.guarded["_buggy_gate"]["error"]
+        assert "_buggy_gate" in exc_info.value.reason
+        assert state.guarded["_buggy_gate"]["exception_type"] == "ValueError"
+        assert "unexpected bug" in state.guarded["_buggy_gate"]["error"]
+        assert state.guarded["_buggy_gate"]["unsafe"] is True
 
     def test_unexpected_exception_does_not_block_remaining_gates(self) -> None:
         calls = []
@@ -201,10 +208,11 @@ class TestGuardrailPolicyUnexpectedErrors:
         policy = GuardrailPolicy(gates=[gate_a, gate_b])
         state = OmniState(thread_id="t1")
 
-        result = asyncio.run(policy.apply(state))
+        with pytest.raises(Unsafe):
+            asyncio.run(policy.apply(state))
 
         assert calls == ["a", "b"]
-        assert result.guarded["gate_a"]["exception_type"] == "ValueError"
+        assert state.guarded["gate_a"]["exception_type"] == "ValueError"
 
     def test_mix_of_unsafe_and_unexpected_errors(self) -> None:
         async def gate_unsafe(state: OmniState, *, config: dict[str, Any]) -> OmniState:

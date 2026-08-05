@@ -30,6 +30,11 @@ from omniagent.kernel.ports.stores import VerifiedQuery
 from omniagent.kernel.state import OmniState
 from omniagent.memory.verified_queries import DuckDBVerifiedQueryStore
 
+# See tests/contract/test_verified_queries.py's pytestmark comment: shared
+# xdist_group so concurrent workers don't race to load the real embedding
+# model at once.
+pytestmark = pytest.mark.xdist_group(name="fastembed")
+
 ALL_GATES = [
     sql_allowlist_gate,
     row_cap_gate,

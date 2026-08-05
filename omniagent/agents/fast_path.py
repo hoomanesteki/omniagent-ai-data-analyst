@@ -34,6 +34,7 @@ from omniagent.agents.node_types import GraphNode
 from omniagent.kernel.gates import GuardrailPolicy, Unsafe
 from omniagent.kernel.ports.engine import EngineAdapter, EngineError
 from omniagent.kernel.ports.identity import Scope
+from omniagent.kernel.ports.semantic import SemanticProvider
 from omniagent.kernel.ports.stores import VerifiedQueryStore
 from omniagent.kernel.state import OmniState
 
@@ -44,6 +45,7 @@ def make_fast_path_node(
     engine: EngineAdapter,
     verified_query_store: VerifiedQueryStore,
     guardrail_policy: GuardrailPolicy,
+    semantic_provider: SemanticProvider | None = None,
     fallback_route: str = "sql_agent",
     principal: Any = None,
     row_cap: int = 10_000,
@@ -53,6 +55,7 @@ def make_fast_path_node(
     """Bind the verified-query store and engine to a cache-first node."""
 
     base_gate_config: dict[str, Any] = {
+        "semantic_provider": semantic_provider,
         "max_rows": row_cap,
         "timeout_ms": int(timeout_s * 1000),
         **(gate_config or {}),

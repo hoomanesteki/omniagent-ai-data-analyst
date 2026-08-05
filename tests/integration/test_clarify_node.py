@@ -76,6 +76,11 @@ class TestClarifyNodeInterruptResume:
         assert result["narration"] == "landed with matched_metric=metric_a"
 
     async def test_resumed_answer_is_recorded_as_a_real_user_message(self):
+        """The recorded message combines the original question with the
+        clarification answer, not the answer alone -- semantic_agent's one
+        extraction call reads only the latest user message, and the
+        original question is where any time phrase, filter, or grouping
+        actually lives (see clarify.py's docstring)."""
         graph = _build_graph(_tied_catalog())
         config = {"configurable": {"thread_id": "t3"}}
 
@@ -86,7 +91,7 @@ class TestClarifyNodeInterruptResume:
         result = await graph.ainvoke(Command(resume="Order count"), config)
 
         contents = [m["content"] for m in result["messages"]]
-        assert contents == ["order total", "Order count"]
+        assert contents == ["order total", "order total (Order count)"]
 
     async def test_still_ambiguous_answer_pauses_again_via_the_same_node(self):
         """A resumed answer that itself ties between the same two metrics

@@ -93,8 +93,22 @@ class TestIsRefused:
     def test_a_successful_answer_is_not_refused(self):
         assert not is_refused({"result_set": [{"n": 3}], "error": None})
 
-    def test_an_explicit_error_is_refused(self):
-        assert is_refused({"result_set": None, "error": "boom"})
+    def test_an_error_with_no_gate_record_is_not_refused(self):
+        """An engine/parser error (a syntax error, a read-only-connection
+        rejection) ends the turn with no result_set too, but that is not
+        the gate stack's doing -- exactly the distinction the redteam
+        refusal rate exists to measure. Verified for real: running these
+        cases with `GuardrailPolicy(gates=[])` reproduces this shape."""
+        assert not is_refused({"result_set": None, "error": "boom", "guarded": {}})
+
+    def test_an_error_with_a_real_gate_refusal_is_refused(self):
+        assert is_refused(
+            {
+                "result_set": None,
+                "error": "boom",
+                "guarded": {"sql_allowlist_gate": {"unsafe": True}},
+            }
+        )
 
     def test_a_gate_recorded_abstain_is_refused(self):
         assert is_refused({"result_set": None, "guarded": {"abstain": True}})

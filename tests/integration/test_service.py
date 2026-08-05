@@ -35,6 +35,10 @@ from omniagent.kernel.time_resolver import DefaultTimeResolver
 from omniagent.memory.verified_queries import DuckDBVerifiedQueryStore
 from tests.fakes.llm import ScriptedLLM
 
+# See tests/contract/test_verified_queries.py's pytestmark comment: shared xdist_group so
+# concurrent workers don't race to load the real embedding model at once.
+pytestmark = pytest.mark.xdist_group(name="fastembed")
+
 NOW = datetime(2026, 8, 3)
 
 ALL_GATES = [

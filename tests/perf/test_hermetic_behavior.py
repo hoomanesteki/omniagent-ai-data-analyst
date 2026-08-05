@@ -194,6 +194,11 @@ class TestCatalogMatchScales:
 
 
 @pytest.mark.perf
+# See tests/contract/test_verified_queries.py's pytestmark comment: shared
+# xdist_group so concurrent workers don't race to load the real embedding
+# model at once. Only this class needs it -- the others in this module
+# never touch FastEmbedProvider.
+@pytest.mark.xdist_group(name="fastembed")
 class TestFastPathHitMakesZeroLlmCalls:
     def test_verified_query_hit_never_calls_the_model(self, ecommerce_warehouse):
         from datetime import UTC, datetime

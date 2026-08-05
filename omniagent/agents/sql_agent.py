@@ -26,6 +26,7 @@ from omniagent.kernel.gates import GuardrailPolicy, Unsafe
 from omniagent.kernel.models import SqlCandidate
 from omniagent.kernel.ports.engine import EngineAdapter, EngineError
 from omniagent.kernel.ports.llm import LLMProvider
+from omniagent.kernel.ports.semantic import SemanticProvider
 from omniagent.kernel.state import OmniState
 
 
@@ -36,6 +37,7 @@ def make_sql_agent_node(
     llm: LLMProvider,
     model_id: str,
     guardrail_policy: GuardrailPolicy,
+    semantic_provider: SemanticProvider | None = None,
     principal: Any = None,
     row_cap: int = 10_000,
     timeout_s: float = 30.0,
@@ -45,6 +47,7 @@ def make_sql_agent_node(
     """Bind the engine, model, and gate stack to a guarded SQL-generation node."""
 
     base_gate_config: dict[str, Any] = {
+        "semantic_provider": semantic_provider,
         "max_rows": row_cap,
         "timeout_ms": int(timeout_s * 1000),
         **(gate_config or {}),
@@ -147,6 +150,11 @@ def make_sql_agent_node(
                 "sql_candidates": attempts,
                 "llm_calls": llm_calls,
                 "model_calls_by_node": model_calls_by_node,
+                # Without this, a caller (e.g. eval/redteam.py's is_refused)
+                # can't tell a genuine gate refusal on the last attempt apart
+                # from an engine/parser error -- `working` still holds
+                # whichever attempt's `guarded` a gate call last populated.
+                "guarded": working.guarded,
             },
         )
 

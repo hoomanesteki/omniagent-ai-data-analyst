@@ -41,11 +41,13 @@ class TestRowCapGateHappyPath:
         assert result.guarded["row_cap_gate"]["status"] == "within_limit"
         assert result.guarded["row_cap_gate"]["row_count"] == row_count
         assert result.guarded["row_cap_gate"]["max_rows"] == max_rows
-        assert result.guarded["row_cap_gate"]["cap_applied"] is True
+        assert result.guarded["row_cap_gate"]["cap_applied"] is False
 
     @pytest.mark.unit
-    def test_assumption_added_when_within_limit(self):
-        """Happy path: assumption is added to track the cap."""
+    def test_no_assumption_added_when_within_limit(self):
+        """A result genuinely under the cap is complete -- no caveat about
+        it applies, so no boilerplate assumption should be added on every
+        single answer regardless of how far under the limit it is."""
         state = OmniState(
             thread_id="test_thread",
             result_meta={"row_count": 50},
@@ -54,24 +56,21 @@ class TestRowCapGateHappyPath:
 
         result = asyncio.run(row_cap_gate(state, config={"max_rows": 100}))
 
-        expected_assumption = "Result set limited to 100 rows maximum"
-        assert expected_assumption in result.assumptions
-        assert len(result.assumptions) == 1
+        assert result.assumptions == []
 
     @pytest.mark.unit
-    def test_assumption_not_duplicated(self):
-        """Happy path: assumption is not added if already present."""
-        assumption = "Result set limited to 100 rows maximum"
+    def test_preexisting_assumptions_untouched_when_within_limit(self):
+        """A pre-existing assumption from an earlier gate is left alone."""
+        assumption = "Some other gate's assumption"
         state = OmniState(
             thread_id="test_thread",
             result_meta={"row_count": 50},
-            assumptions=[assumption],  # Already has the assumption
+            assumptions=[assumption],
         )
 
         result = asyncio.run(row_cap_gate(state, config={"max_rows": 100}))
 
-        # Should only have one instance of the assumption
-        assert result.assumptions.count(assumption) == 1
+        assert result.assumptions == [assumption]
 
 
 class TestRowCapGateViolation:
@@ -248,7 +247,7 @@ class TestRowCapGateEdgeCases:
         # Should pass and record the zero
         assert result.guarded["row_cap_gate"]["status"] == "within_limit"
         assert result.guarded["row_cap_gate"]["row_count"] == 0
-        assert "Result set limited to 100 rows maximum" in result.assumptions
+        assert result.assumptions == []
 
     @pytest.mark.unit
     def test_state_guarded_none_initialized(self):
@@ -327,8 +326,9 @@ class TestRowCapGateEdgeCases:
         assert result.guarded["row_cap_gate"]["status"] == "within_limit"
 
     @pytest.mark.unit
-    def test_assumptions_list_accumulates(self):
-        """Edge case: assumptions list already has other items."""
+    def test_assumptions_list_untouched_when_within_limit(self):
+        """Edge case: assumptions list already has other items; a
+        within-limit pass adds nothing to it."""
         state = OmniState(
             thread_id="test_thread",
             result_meta={"row_count": 50},
@@ -341,9 +341,7 @@ class TestRowCapGateEdgeCases:
 
         result = asyncio.run(row_cap_gate(state, config={"max_rows": 100}))
 
-        # New assumption should be added without removing others
-        assert len(result.assumptions) == 4
-        assert "Result set limited to 100 rows maximum" in result.assumptions
+        assert len(result.assumptions) == 3
         assert "Assumption 1" in result.assumptions
         assert "Assumption 2" in result.assumptions
 
@@ -423,8 +421,7 @@ class TestRowCapGateIntegration:
         result = asyncio.run(row_cap_gate(state, config={"max_rows": 1000}))
 
         assert result.guarded["row_cap_gate"]["status"] == "within_limit"
-        assert len(result.assumptions) == 2
-        assert "Result set limited to 1000 rows maximum" in result.assumptions
+        assert result.assumptions == ["Only 2024 data included"]
 
     @pytest.mark.unit
     def test_multiple_gates_scenario(self):
@@ -444,8 +441,7 @@ class TestRowCapGateIntegration:
         # All previous gate data preserved
         assert result.guarded["sql_allowlist_gate"]["status"] == "approved"
         assert result.guarded["timeout_gate"]["elapsed_ms"] == 45
-        assert "SQL is safe" in result.assumptions
-        assert "Result set limited to 200 rows maximum" in result.assumptions
+        assert result.assumptions == ["SQL is safe"]
 
 
 class TestRowCapGateDataTypes:
@@ -503,10 +499,8 @@ class TestRowCapGateDataTypes:
 
         # First call
         result1 = asyncio.run(row_cap_gate(state, config={"max_rows": 100}))
-        assert len(result1.assumptions) == 1
+        assert result1.assumptions == []
 
         # Second call with same state (simulate re-running gate)
         result2 = asyncio.run(row_cap_gate(result1, config={"max_rows": 100}))
-        # Assumption should not be duplicated
-        assert len(result2.assumptions) == 1
-        assert result2.assumptions.count("Result set limited to 100 rows maximum") == 1
+        assert result2.assumptions == []

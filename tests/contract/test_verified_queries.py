@@ -17,7 +17,12 @@ from omniagent.kernel.ports.identity import Scope
 from omniagent.kernel.ports.stores import VerifiedQuery
 from omniagent.memory.verified_queries import DuckDBVerifiedQueryStore
 
-pytestmark = pytest.mark.contract
+# xdist_group: every module that constructs a real FastEmbedProvider shares
+# this group so pytest-xdist (run with --dist=loadgroup) serializes them onto
+# one worker instead of letting several workers load onnxruntime + the model
+# into memory at the same moment -- observed to crash a worker process
+# outright on a memory-constrained runner, not just slow things down.
+pytestmark = [pytest.mark.contract, pytest.mark.xdist_group(name="fastembed")]
 
 
 @pytest.fixture(scope="module")

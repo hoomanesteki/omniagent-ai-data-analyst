@@ -58,7 +58,7 @@ class GroqProvider(LLMProvider):
                 privacy="shared-api",
             ),
             "llama-3.3-70b-versatile": ModelCapabilities(
-                context_window=8192,
+                context_window=131072,
                 supports_strict_json_schema=True,
                 supports_tools=True,
                 supports_parallel_tools=True,
@@ -74,7 +74,7 @@ class GroqProvider(LLMProvider):
                 privacy="shared-api",
             ),
             "llama-3.1-8b-instant": ModelCapabilities(
-                context_window=8192,
+                context_window=131072,
                 supports_strict_json_schema=True,
                 supports_tools=False,
                 supports_parallel_tools=False,

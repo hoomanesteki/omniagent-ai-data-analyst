@@ -328,11 +328,17 @@ class TestSqlAllowlistGateBlockedKeywords:
     @pytest.mark.parametrize(
         "sql",
         [
-            "DROPS TABLE users",  # DROP as substring, not word
-            "CREATES TABLE users",
-            "DELETES FROM users",
-            "INSERTS INTO users",
-            "UPDATES users",
+            # DROP/CREATE/DELETE/INSERT/UPDATE as a substring, not a word, in
+            # an otherwise-plain SELECT -- the case the word-boundary regex
+            # exists for. A bare non-SELECT string is caught by the
+            # SELECT-only check now regardless of which words it contains, so
+            # this has to be a real SELECT to test the word-boundary behavior
+            # specifically.
+            "SELECT * FROM logs WHERE action = 'DROPS TABLE users'",
+            "SELECT * FROM logs WHERE action = 'CREATES TABLE users'",
+            "SELECT * FROM logs WHERE action = 'DELETES FROM users'",
+            "SELECT * FROM logs WHERE action = 'INSERTS a new row'",
+            "SELECT * FROM logs WHERE action = 'UPDATES users'",
         ],
     )
     async def test_keyword_substrings_pass(self, sql: str) -> None:
@@ -623,11 +629,13 @@ class TestSqlAllowlistGateEdgeCases:
         assert result is not None
 
     @pytest.mark.asyncio
-    async def test_sql_with_only_comments(self) -> None:
-        """Test SQL that contains only comments."""
+    async def test_sql_with_only_comments_is_rejected(self) -> None:
+        """A comment-only string normalizes to nothing to execute, which the
+        SELECT-only check now correctly rejects rather than silently passing
+        a statement with no actual query in it."""
         state = OmniState(executed_sql="-- just a comment\n/* block comment */")
-        result = await sql_allowlist_gate(state, config={})
-        assert result is not None
+        with pytest.raises(Unsafe):
+            await sql_allowlist_gate(state, config={})
 
     @pytest.mark.asyncio
     async def test_sql_with_excessive_whitespace(self) -> None:
