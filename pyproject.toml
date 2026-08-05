@@ -73,6 +73,16 @@ filterwarnings = [
   "error::DeprecationWarning"
 ]
 
+[tool.coverage.run]
+# channels/ is the HTTP/MCP composition boundary, exercised by tests/integration
+# and tests/e2e (which run in a separate CI job with --no-cov, since it's a
+# different pytest invocation entirely). Measuring it here would score it a
+# permanent 0% against this job's own unit/contract/component/perf tiers,
+# which never import it, dragging the real ~90% coverage of the layers this
+# job actually tests down under fail_under regardless of how well-tested
+# those layers are.
+omit = ["omniagent/channels/*"]
+
 [tool.coverage.report]
 fail_under = 80
 exclude_also = [
