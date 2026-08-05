@@ -10,6 +10,10 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  checks: write
+
 jobs:
   lint:
     name: Lint (ruff, mypy, import-linter)
@@ -62,7 +66,7 @@ jobs:
       - name: Run fast test tiers
         run: >-
           uv run pytest tests/unit tests/contract tests/component tests/perf
-          -n auto --dist=loadgroup --tb=short
+          -n auto --dist=loadgroup --tb=short --junitxml=junit.xml
           --cov=omniagent --cov-report=term-missing --cov-report=xml
 
       - name: Upload coverage report
@@ -72,6 +76,18 @@ jobs:
           name: coverage-xml
           path: coverage.xml
           retention-days: 14
+
+      # Temporary diagnostic: the runner's own job logs aren't downloadable
+      # without an authenticated admin token, so this publishes failing test
+      # names/tracebacks as check-run annotations instead, which the public
+      # API does expose. Remove once the current CI failure is root-caused.
+      - name: Publish failing test annotations
+        if: always()
+        uses: mikepenz/action-junit-report@v4
+        with:
+          report_paths: junit.xml
+          require_tests: false
+          annotate_only: true
 
   integration:
     name: Integration and e2e tests
