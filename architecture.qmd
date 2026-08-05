@@ -117,7 +117,7 @@ silently treated as a pass.
 | `row_cap` | Refuses a result the engine reports as truncated; a within-limit result is not flagged as an assumption, since nothing was actually capped |
 | `timeout` | Records elapsed time against a budget |
 | `empty_result` | Marks a zero-row result for abstention rather than narrating a confident number over nothing |
-| `numeric_recompute` | Re-derives a narrated number from the real result set and rejects a mismatch |
+| `numeric_recompute` | Re-derives a narrated number from the real result set and rejects a mismatch -- currently dead code in the live graph: every `GuardrailPolicy.apply()` call site runs before `narrator_node` sets `state.narration`, so its own guard clause always short-circuits (see BUILD_STATUS.md's post-roadmap audit) |
 | `pii_mask` | Masks a semantic-layer-declared PII dimension by name, and any email/phone/SSN/card-shaped value by pattern, regardless of column name -- covers both the governed path's known column aliases and the guarded fallback's arbitrary ones |
 | `provenance` | Attaches the executed SQL and result metadata to the answer for audit |
 | `llm_budget` | Caps the number of model calls a single turn can spend |
