@@ -16,6 +16,11 @@ from yamllint.config import YamlLintConfig
 _WORKFLOWS_DIR = Path(__file__).resolve().parents[2] / ".github" / "workflows"
 _WORKFLOW_FILES = sorted(_WORKFLOWS_DIR.glob("*.yml")) if _WORKFLOWS_DIR.exists() else []
 
+# Jobs that legitimately don't check out the repo: actions/deploy-pages
+# deploys the artifact the build job already uploaded and never reads the
+# repo itself, so a checkout step here would be dead weight, not a fix.
+_NO_CHECKOUT_NEEDED = {("docs.yml", "deploy")}
+
 
 @pytest.fixture(scope="module")
 def yamllint_config():
@@ -38,6 +43,8 @@ class TestWorkflowYaml:
     def test_every_job_checks_out_the_repo_first(self, workflow_path):
         doc = yaml.safe_load(workflow_path.read_text())
         for job_name, job in doc["jobs"].items():
+            if (workflow_path.name, job_name) in _NO_CHECKOUT_NEEDED:
+                continue
             steps = job.get("steps", [])
             assert steps, f"{workflow_path.name}: job {job_name!r} has no steps"
             assert steps[0].get("uses", "").startswith("actions/checkout@"), (
